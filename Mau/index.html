@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDR Analyzer - Phân tích chi tiết cuộc gọi</title>
+    <link rel="icon" type="image/png" href="call-icon.png">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>📊 CDR Analyzer</h1>
+                <p>Điều tra phân tích chi tiết cuộc gọi</p>
+                <button class="btn btn-primary header-import-btn" id="openFileManagerBtn" title="Quản lý file">
+                    📁 Quản lý file
+                </button>
+            </div>
+        </header>
+
+        <!-- File Upload Section -->
+        <section class="upload-section" id="uploadSection">
+            <div class="upload-container">
+                <div class="file-drop-zone" id="fileDropZone">
+                    <div class="drop-zone-content">
+                        <div class="upload-icon">📁</div>
+                        <h3>Kéo thả file Excel vào đây (có thể chọn nhiều file)</h3>
+                        <p>hoặc click vào đây để chọn file</p>
+                        <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display: none;">
+                    </div>
+                </div>
+                
+                <!-- Import Errors Table -->
+                <div class="import-errors-container" id="importErrorsContainer" style="display: none;">
+                    <div class="import-errors-header">
+                        <h4>⚠️ Các file import lỗi</h4>
+                        <button class="btn btn-sm btn-secondary" id="clearErrorsBtn">✕ Đóng</button>
+                    </div>
+                    <div class="import-errors-table-container">
+                        <table class="import-errors-table">
+                            <thead>
+                                <tr>
+                                    <th>TT</th>
+                                    <th>Tên file</th>
+                                    <th>Lỗi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="importErrorsBody">
+                                <!-- Error rows will be added here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Analysis Errors Table -->
+                <div class="import-errors-container" id="analysisErrorsContainer" style="display: none;">
+                    <div class="import-errors-header">
+                        <h4>⚠️ Các file phân tích lỗi</h4>
+                        <button class="btn btn-sm btn-secondary" id="clearAnalysisErrorsBtn">✕ Đóng</button>
+                    </div>
+                    <div class="import-errors-table-container">
+                        <table class="import-errors-table">
+                            <thead>
+                                <tr>
+                                    <th>TT</th>
+                                    <th>Tên file</th>
+                                    <th>Lỗi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analysisErrorsBody">
+                                <!-- Error rows will be added here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- File List with Template Selection -->
+                <div class="files-list-container" id="filesListContainer" style="display: none;">
+                    <div class="files-list-header">
+                        <h4>📂 Danh sách file đã import (<span id="filesCount">0</span>)</h4>
+                        <button class="btn btn-secondary btn-sm" id="addMoreFilesBtn">➕ Thêm file</button>
+                    </div>
+                    <div class="files-list" id="filesList">
+                        <!-- File items will be added here dynamically -->
+                    </div>
+                    <div class="files-actions">
+                        <button class="btn btn-primary" id="analyzeAllFilesBtn">🚀 Phân tích tất cả</button>
+                        <button class="btn btn-danger" id="clearAllFilesBtn">🗑️ Xóa tất cả</button>
+                    </div>
+                </div>
+                
+                <!-- File Selection After Analysis -->
+                <div class="file-selection-container" id="fileSelectionContainer" style="display: none;">
+                    <div class="file-selection-header">
+                        <h4>📊 Chọn file để xem kết quả phân tích</h4>
+                        <button class="btn btn-success" id="exportAllFilesBtn" title="Xuất tất cả file đã phân tích">
+                            📥 Xuất tất cả
+                        </button>
+                    </div>
+                    <div class="file-selection-list" id="fileSelectionList">
+                        <!-- Analyzed file items will be added here -->
+                    </div>
+                </div>
+                
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent" style="display: none;">
+            <!-- Current File Info -->
+            <div class="file-info" id="fileInfo" style="display: none;">
+                <div class="file-details">
+                    <span class="file-name" id="fileName"></span>
+                    <div class="file-actions">
+                        <button class="btn btn-success" id="exportAllBtn">📊 Xuất tất cả</button>
+                        <button class="remove-file" id="removeFile">✕</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <nav class="tab-navigation">
+                <button class="tab-btn active" data-tab="subscriber">📱 Thông tin thuê bao</button>
+                <button class="tab-btn" data-tab="call-history">📋 Lịch sử cuộc gọi</button>
+                <button class="tab-btn" data-tab="contacts">👥 Số liên lạc</button>
+                <button class="tab-btn" data-tab="imei">📱 IMEI</button>
+                <button class="tab-btn" data-tab="location">📍 Vị trí</button>
+                <button class="tab-btn" data-tab="time-analysis">📊 Báo cáo</button>
+                <button class="tab-btn" data-tab="maps">🗺️ Bản đồ</button>
+                <button class="tab-btn" data-tab="compare">🔍 So sánh</button>
+        </nav>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Tab 1: Thông tin thuê bao -->
+                <div class="tab-pane active" id="subscriber">
+            <div class="tab-header">
+                        <h2>📱 Thông tin thuê bao</h2>
+                        <div class="tab-actions">
+                            <button class="btn btn-primary" id="editSubscriberBtn">✏️ Chỉnh sửa</button>
+                            <button class="btn btn-success" id="saveSubscriberBtn" style="display: none;">💾 Lưu</button>
+                            <button class="btn btn-secondary" id="cancelSubscriberBtn" style="display: none;">❌ Hủy</button>
+                            <button class="btn btn-warning" id="resetSubscriberBtn" title="Reset về dữ liệu gốc từ file Excel">🔄 Reset Data</button>
+                            <button class="btn btn-danger" id="clearFileDataBtn" title="Xóa toàn bộ dữ liệu đã lưu của file hiện tại">🗑️ Xóa toàn bộ</button>
+                    </div>
+                </div>
+                    
+                    <div class="subscriber-info" id="subscriberInfo">
+                        <!-- Thông tin thuê bao sẽ được hiển thị ở đây -->
+            </div>
+
+                </div>
+
+                <!-- Tab 2: Lịch sử cuộc gọi -->
+                <div class="tab-pane" id="call-history">
+                    <div class="tab-header">
+                        <h2>📋 Lịch sử cuộc gọi</h2>
+                        <div class="tab-actions">
+                            <div class="pagination-settings">
+                                <label for="callHistoryPageSize">Hiển thị:</label>
+                                <select id="callHistoryPageSize" class="search-select">
+                                    <option value="25">25</option>
+                                    <option value="50" selected>50</option>
+                                    <option value="75">75</option>
+                                    <option value="100">100</option>
+                    </select>
+                                <span>dòng</span>
+                </div>
+                            <button class="btn btn-success" id="exportCallHistory">💾 Xuất Excel</button>
+                        </div>
+                    </div>
+                    
+                                <!-- Search and Filter Container -->
+                                <div class="search-container">
+                                    <div class="search-row">
+                                        <div class="search-group">
+                                            <input type="text" id="callHistorySearch" placeholder="🔍 Tìm kiếm tất cả thông tin..." class="search-input">
+                                        </div>
+                                        <div class="search-group">
+                                            <select id="callHistoryTypeFilter" class="search-select">
+                                                <option value="">📞 Tất cả loại</option>
+                                                <option value="Cuộc gọi đi">📤 Cuộc gọi đi</option>
+                                                <option value="Cuộc gọi đến">📥 Cuộc gọi đến</option>
+                                                <option value="Tin nhắn đi">💬 Tin nhắn đi</option>
+                                                <option value="Tin nhắn đến">📨 Tin nhắn đến</option>
+                    </select>
+                </div>
+                                        <div class="search-actions">
+                                            <button class="btn btn-primary" id="filterCallHistory">🔍 Lọc</button>
+                                            <button class="btn btn-secondary" id="resetCallHistory">🔄 Làm mới</button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="filter-row">
+                                        <div class="filter-group">
+                        <label>Từ ngày:</label>
+                                            <input type="date" id="callHistoryDateFrom">
+                                        </div>
+                                        <div class="filter-group">
+                        <label>Đến ngày:</label>
+                                            <input type="date" id="callHistoryDateTo">
+                                        </div>
+                                        <div class="filter-group">
+                        <label>Từ giờ:</label>
+                                            <select id="callHistoryTimeFrom">
+                            <option value="">Tất cả</option>
+                            <option value="00:00">00:00</option>
+                            <option value="00:30">00:30</option>
+                            <option value="01:00">01:00</option>
+                            <option value="01:30">01:30</option>
+                            <option value="02:00">02:00</option>
+                            <option value="02:30">02:30</option>
+                            <option value="03:00">03:00</option>
+                            <option value="03:30">03:30</option>
+                            <option value="04:00">04:00</option>
+                            <option value="04:30">04:30</option>
+                            <option value="05:00">05:00</option>
+                            <option value="05:30">05:30</option>
+                            <option value="06:00">06:00</option>
+                            <option value="06:30">06:30</option>
+                            <option value="07:00">07:00</option>
+                            <option value="07:30">07:30</option>
+                            <option value="08:00">08:00</option>
+                            <option value="08:30">08:30</option>
+                            <option value="09:00">09:00</option>
+                            <option value="09:30">09:30</option>
+                            <option value="10:00">10:00</option>
+                            <option value="10:30">10:30</option>
+                            <option value="11:00">11:00</option>
+                            <option value="11:30">11:30</option>
+                            <option value="12:00">12:00</option>
+                            <option value="12:30">12:30</option>
+                            <option value="13:00">13:00</option>
+                            <option value="13:30">13:30</option>
+                            <option value="14:00">14:00</option>
+                            <option value="14:30">14:30</option>
+                            <option value="15:00">15:00</option>
+                            <option value="15:30">15:30</option>
+                            <option value="16:00">16:00</option>
+                            <option value="16:30">16:30</option>
+                            <option value="17:00">17:00</option>
+                            <option value="17:30">17:30</option>
+                            <option value="18:00">18:00</option>
+                            <option value="18:30">18:30</option>
+                            <option value="19:00">19:00</option>
+                            <option value="19:30">19:30</option>
+                            <option value="20:00">20:00</option>
+                            <option value="20:30">20:30</option>
+                            <option value="21:00">21:00</option>
+                            <option value="21:30">21:30</option>
+                            <option value="22:00">22:00</option>
+                            <option value="22:30">22:30</option>
+                            <option value="23:00">23:00</option>
+                            <option value="23:30">23:30</option>
+                        </select>
+                                        </div>
+                                        <div class="filter-group">
+                        <label>Đến giờ:</label>
+                                            <select id="callHistoryTimeTo">
+                            <option value="">Tất cả</option>
+                            <option value="00:00">00:00</option>
+                            <option value="00:30">00:30</option>
+                            <option value="01:00">01:00</option>
+                            <option value="01:30">01:30</option>
+                            <option value="02:00">02:00</option>
+                            <option value="02:30">02:30</option>
+                            <option value="03:00">03:00</option>
+                            <option value="03:30">03:30</option>
+                            <option value="04:00">04:00</option>
+                            <option value="04:30">04:30</option>
+                            <option value="05:00">05:00</option>
+                            <option value="05:30">05:30</option>
+                            <option value="06:00">06:00</option>
+                            <option value="06:30">06:30</option>
+                            <option value="07:00">07:00</option>
+                            <option value="07:30">07:30</option>
+                            <option value="08:00">08:00</option>
+                            <option value="08:30">08:30</option>
+                            <option value="09:00">09:00</option>
+                            <option value="09:30">09:30</option>
+                            <option value="10:00">10:00</option>
+                            <option value="10:30">10:30</option>
+                            <option value="11:00">11:00</option>
+                            <option value="11:30">11:30</option>
+                            <option value="12:00">12:00</option>
+                            <option value="12:30">12:30</option>
+                            <option value="13:00">13:00</option>
+                            <option value="13:30">13:30</option>
+                            <option value="14:00">14:00</option>
+                            <option value="14:30">14:30</option>
+                            <option value="15:00">15:00</option>
+                            <option value="15:30">15:30</option>
+                            <option value="16:00">16:00</option>
+                            <option value="16:30">16:30</option>
+                            <option value="17:00">17:00</option>
+                            <option value="17:30">17:30</option>
+                            <option value="18:00">18:00</option>
+                            <option value="18:30">18:30</option>
+                            <option value="19:00">19:00</option>
+                            <option value="19:30">19:30</option>
+                            <option value="20:00">20:00</option>
+                            <option value="20:30">20:30</option>
+                            <option value="21:00">21:00</option>
+                            <option value="21:30">21:30</option>
+                            <option value="22:00">22:00</option>
+                            <option value="22:30">22:30</option>
+                            <option value="23:00">23:00</option>
+                            <option value="23:30">23:30</option>
+                        </select>
+                                        </div>
+                    </div>
+                    
+                                    <div class="search-results">
+                                        <span id="callHistoryResults">📊 Kết quả: 0/0</span>
+                </div>
+            </div>
+            
+                    <!-- Pagination Controls -->
+                    <div class="pagination-controls" id="callHistoryPagination" style="display: none;">
+                        <button class="btn btn-secondary" id="firstPageBtn" onclick="cdrAnalyzer.firstPage()" disabled title="Trang đầu">⏮</button>
+                        <button class="btn btn-secondary" id="prevPageBtn" onclick="cdrAnalyzer.previousPage()" disabled title="Trang trước">◀</button>
+                        <span class="pagination-info">
+                            Trang 
+                            <input type="number" id="pageInput" min="1" max="1" value="1" style="width: 60px; padding: 4px; text-align: center; border: 1px solid #ddd; border-radius: 4px;" onchange="cdrAnalyzer.goToPage(parseInt(this.value))" onkeypress="if(event.key === 'Enter') { cdrAnalyzer.goToPage(parseInt(this.value)); this.blur(); }">
+                            / <span id="totalPagesDisplay">1</span>
+                        </span>
+                        <button class="btn btn-secondary" id="nextPageBtn" onclick="cdrAnalyzer.nextPage()" title="Trang sau">▶</button>
+                        <button class="btn btn-secondary" id="lastPageBtn" onclick="cdrAnalyzer.lastPage()" disabled title="Trang cuối">⏭</button>
+            </div>
+
+            <div class="table-container">
+                                    <table class="data-table" id="callHistoryTable">
+                    <thead>
+                        <tr>
+                            <th>TT</th>
+                                                <th>Số chủ</th>
+                                                <th>Số liên hệ</th>
+                                                <th>Thời gian</th>
+                                                <th>Thời lượng</th>
+                                                <th>IMEI</th>
+                                                <th>Mã tỉnh</th>
+                                                <th>Loại</th>
+                                                <th>Dịch vụ</th>
+                                                <th>Địa chỉ</th>
+                                                <th>LAC</th>
+                                                <th>Cell</th>
+                        </tr>
+                    </thead>
+                                        <tbody id="callHistoryBody"></tbody>
+                </table>
+            </div>
+            
+            <!-- Scroll to top button -->
+            <button class="scroll-to-top-btn" id="scrollToTopCallHistory" title="Lên đầu trang">↑</button>
+        </div>
+
+                <!-- Tab 3: Số liên lạc -->
+                <div class="tab-pane" id="contacts">
+            <div class="tab-header">
+                        <h2>👥 Số liên lạc</h2>
+                        <div class="tab-actions">
+                            <div class="pagination-settings">
+                                <label>Hiển thị:</label>
+                                <select id="contactsPageSize">
+                                    <option value="25">25</option>
+                                    <option value="50" selected>50</option>
+                                    <option value="75">75</option>
+                                    <option value="100">100</option>
+                                </select>
+                                <span>dòng</span>
+                            </div>
+                            <button class="btn btn-success" id="exportContacts">💾 Xuất Excel</button>
+                </div>
+            </div>
+
+                    <!-- Search Container -->
+                    <div class="search-container">
+                        <div class="search-row">
+                            <div class="search-group">
+                                <input type="text" id="contactsSearchInput" placeholder="🔍 Tìm kiếm số điện thoại..." class="search-input">
+                            </div>
+                            <div class="search-actions">
+                                <button class="btn btn-secondary" id="contactsResetBtn">🔄 Làm mới</button>
+                </div>
+            </div>
+
+                        <!-- Time Filter Row -->
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>Từ ngày:</label>
+                                <input type="date" id="contactsDateFrom">
+                </div>
+                            <div class="filter-group">
+                                <label>Đến ngày:</label>
+                                <input type="date" id="contactsDateTo">
+                    </div>
+                            <div class="filter-group">
+                                <label>Từ giờ:</label>
+                                <select id="contactsTimeFrom">
+                                    <option value="">Tất cả</option>
+                                    <option value="00:00">00:00</option>
+                                    <option value="00:30">00:30</option>
+                                    <option value="01:00">01:00</option>
+                                    <option value="01:30">01:30</option>
+                                    <option value="02:00">02:00</option>
+                                    <option value="02:30">02:30</option>
+                                    <option value="03:00">03:00</option>
+                                    <option value="03:30">03:30</option>
+                                    <option value="04:00">04:00</option>
+                                    <option value="04:30">04:30</option>
+                                    <option value="05:00">05:00</option>
+                                    <option value="05:30">05:30</option>
+                                    <option value="06:00">06:00</option>
+                                    <option value="06:30">06:30</option>
+                                    <option value="07:00">07:00</option>
+                                    <option value="07:30">07:30</option>
+                                    <option value="08:00">08:00</option>
+                                    <option value="08:30">08:30</option>
+                                    <option value="09:00">09:00</option>
+                                    <option value="09:30">09:30</option>
+                                    <option value="10:00">10:00</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="11:00">11:00</option>
+                                    <option value="11:30">11:30</option>
+                                    <option value="12:00">12:00</option>
+                                    <option value="12:30">12:30</option>
+                                    <option value="13:00">13:00</option>
+                                    <option value="13:30">13:30</option>
+                                    <option value="14:00">14:00</option>
+                                    <option value="14:30">14:30</option>
+                                    <option value="15:00">15:00</option>
+                                    <option value="15:30">15:30</option>
+                                    <option value="16:00">16:00</option>
+                                    <option value="16:30">16:30</option>
+                                    <option value="17:00">17:00</option>
+                                    <option value="17:30">17:30</option>
+                                    <option value="18:00">18:00</option>
+                                    <option value="18:30">18:30</option>
+                                    <option value="19:00">19:00</option>
+                                    <option value="19:30">19:30</option>
+                                    <option value="20:00">20:00</option>
+                                    <option value="20:30">20:30</option>
+                                    <option value="21:00">21:00</option>
+                                    <option value="21:30">21:30</option>
+                                    <option value="22:00">22:00</option>
+                                    <option value="22:30">22:30</option>
+                                    <option value="23:00">23:00</option>
+                                    <option value="23:30">23:30</option>
+                                </select>
+                    </div>
+                            <div class="filter-group">
+                                <label>Đến giờ:</label>
+                                <select id="contactsTimeTo">
+                                    <option value="">Tất cả</option>
+                                    <option value="00:00">00:00</option>
+                                    <option value="00:30">00:30</option>
+                                    <option value="01:00">01:00</option>
+                                    <option value="01:30">01:30</option>
+                                    <option value="02:00">02:00</option>
+                                    <option value="02:30">02:30</option>
+                                    <option value="03:00">03:00</option>
+                                    <option value="03:30">03:30</option>
+                                    <option value="04:00">04:00</option>
+                                    <option value="04:30">04:30</option>
+                                    <option value="05:00">05:00</option>
+                                    <option value="05:30">05:30</option>
+                                    <option value="06:00">06:00</option>
+                                    <option value="06:30">06:30</option>
+                                    <option value="07:00">07:00</option>
+                                    <option value="07:30">07:30</option>
+                                    <option value="08:00">08:00</option>
+                                    <option value="08:30">08:30</option>
+                                    <option value="09:00">09:00</option>
+                                    <option value="09:30">09:30</option>
+                                    <option value="10:00">10:00</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="11:00">11:00</option>
+                                    <option value="11:30">11:30</option>
+                                    <option value="12:00">12:00</option>
+                                    <option value="12:30">12:30</option>
+                                    <option value="13:00">13:00</option>
+                                    <option value="13:30">13:30</option>
+                                    <option value="14:00">14:00</option>
+                                    <option value="14:30">14:30</option>
+                                    <option value="15:00">15:00</option>
+                                    <option value="15:30">15:30</option>
+                                    <option value="16:00">16:00</option>
+                                    <option value="16:30">16:30</option>
+                                    <option value="17:00">17:00</option>
+                                    <option value="17:30">17:30</option>
+                                    <option value="18:00">18:00</option>
+                                    <option value="18:30">18:30</option>
+                                    <option value="19:00">19:00</option>
+                                    <option value="19:30">19:30</option>
+                                    <option value="20:00">20:00</option>
+                                    <option value="20:30">20:30</option>
+                                    <option value="21:00">21:00</option>
+                                    <option value="21:30">21:30</option>
+                                    <option value="22:00">22:00</option>
+                                    <option value="22:30">22:30</option>
+                                    <option value="23:00">23:00</option>
+                                    <option value="23:30">23:30</option>
+                                </select>
+                </div>
+                            <div class="search-actions">
+                                <button class="btn btn-primary" id="filterContacts">🔍 Lọc</button>
+                                <button class="btn btn-secondary" id="resetContactsFilters">🔄 Làm mới</button>
+                </div>
+            </div>
+            
+                        <!-- Statistics Row -->
+                        <div class="contacts-stats">
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalContactsCount">0</div>
+                                <div class="stat-label">Tổng số liên lạc</div>
+                </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="filteredContactsCount">0</div>
+                                <div class="stat-label">Số liên lạc trong khoảng</div>
+                    </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalInteractionsCount">0</div>
+                                <div class="stat-label">Tổng tương tác</div>
+                </div>
+                </div>
+            </div>
+                    
+                    <!-- Pagination Controls -->
+                    <div class="pagination-controls" id="contactsPagination" style="display: none;">
+                        <button class="btn btn-secondary" id="contactsFirstBtn" onclick="cdrAnalyzer.contactsFirstPage()" disabled title="Trang đầu">⏮</button>
+                        <button class="btn btn-secondary" id="contactsPrevBtn" onclick="cdrAnalyzer.contactsPreviousPage()" disabled title="Trang trước">◀</button>
+                        <span class="pagination-info">
+                            Trang 
+                            <input type="number" id="contactsPageInput" min="1" max="1" value="1" style="width: 60px; padding: 4px; text-align: center; border: 1px solid #ddd; border-radius: 4px;" onchange="cdrAnalyzer.contactsGoToPage(parseInt(this.value))" onkeypress="if(event.key === 'Enter') { cdrAnalyzer.contactsGoToPage(parseInt(this.value)); this.blur(); }">
+                            / <span id="contactsTotalPagesDisplay">1</span>
+                        </span>
+                        <button class="btn btn-secondary" id="contactsNextBtn" onclick="cdrAnalyzer.contactsNextPage()" title="Trang sau">▶</button>
+                        <button class="btn btn-secondary" id="contactsLastBtn" onclick="cdrAnalyzer.contactsLastPage()" disabled title="Trang cuối">⏭</button>
+            </div>
+
+            <div class="table-container">
+                        <table class="data-table" id="contactsTable">
+                    <thead>
+                        <tr>
+                            <th>TT</th>
+                                    <th>Số điện thoại</th>
+                            <th>Tần suất</th>
+                                    <th>Zalo</th>
+                                    <th>Facebook</th>
+                                    <th>Telegram</th>
+                                    <th>Ghi chú</th>
+                        </tr>
+                    </thead>
+                            <tbody id="contactsBody"></tbody>
+                </table>
+            </div>
+            
+            <!-- Scroll to top button -->
+            <button class="scroll-to-top-btn" id="scrollToTopContacts" title="Lên đầu trang">↑</button>
+        </div>
+
+                <!-- Tab 4: IMEI -->
+                <div class="tab-pane" id="imei">
+            <div class="tab-header">
+                        <h2>📱 Phân tích IMEI</h2>
+                        <div class="tab-actions">
+                            <button class="btn btn-primary" id="setCookies">🍪 Nhập Cookies</button>
+                            <button class="btn btn-secondary" id="testIMEI">🧪 Test IMEI</button>
+                            <button class="btn btn-info" id="lookupAllIMEI">🔍 Tra cứu tất cả</button>
+                            <button class="btn btn-success" id="exportIMEI">💾 Xuất Excel</button>
+                            <button class="btn btn-danger" id="clearAllData">🗑️ Xóa dữ liệu</button>
+                </div>
+            </div>
+
+                    <!-- Thanh tìm kiếm IMEI -->
+                    <div class="search-container">
+                        <div class="search-row">
+                            <div class="search-group">
+                                <input type="text" id="imeiSearch" placeholder="🔍 Tìm kiếm IMEI hoặc Model..." class="search-input">
+                            </div>
+                            <div class="search-group">
+                                <select id="imeiStatusFilter" class="search-select">
+                                    <option value="all">📱 Tất cả</option>
+                                    <option value="valid">✅ IMEI hợp lệ</option>
+                                    <option value="invalid">❌ IMEI không hợp lệ</option>
+                                </select>
+                            </div>
+                            <div class="search-actions">
+                                <button class="btn btn-secondary" id="resetIMEI">🔄 Làm mới</button>
+                            </div>
+                        </div>
+                        <div class="search-results">
+                            <span id="imeiResults">📊 Kết quả: 0/0</span>
+                </div>
+            </div>
+            
+                    <div class="imei-stats">
+                        <div class="stat-card">
+                            <div class="stat-number" id="uniqueIMEICount">0</div>
+                            <div class="stat-label">IMEI duy nhất</div>
+                </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="validIMEICount">0</div>
+                            <div class="stat-label">IMEI hợp lệ (15 số)</div>
+                    </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="invalidIMEICount">0</div>
+                            <div class="stat-label">IMEI không hợp lệ</div>
+                </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="data-table" id="imeiTable">
+                            <thead>
+                                <tr>
+                                    <th>TT</th>
+                                    <th>IMEI</th>
+                                    <th>Tần suất</th>
+                                    <th>Model</th>
+                                    <th>Thời gian sử dụng</th>
+                                    <th>Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody id="imeiBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Vị trí -->
+                <div class="tab-pane" id="location">
+                    <div class="tab-header">
+                        <h2>📍 Vị trí Cell/LAC</h2>
+                        <div class="tab-actions">
+                            <div class="pagination-settings">
+                    <label>Hiển thị:</label>
+                                <select id="locationPageSize">
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                                    <option value="75">75</option>
+                        <option value="100">100</option>
+                    </select>
+                                <span>dòng</span>
+                </div>
+                            <button class="btn btn-primary" id="syncLocationBtn">🔄 Đồng bộ</button>
+                            <button class="btn btn-success" id="exportLocation">💾 Xuất Excel</button>
+                        </div>
+                    </div>
+
+                    <!-- Search Container -->
+                    <div class="search-container">
+                        <div class="search-row">
+                            <div class="search-group">
+                                <input type="text" id="locationSearchInput" placeholder="🔍 Tìm kiếm tất cả thông tin..." class="search-input">
+                            </div>
+                            <div class="search-group">
+                                <input type="text" id="locationContactSearchInput" placeholder="📞 Tìm kiếm theo số liên lạc..." class="search-input">
+                            </div>
+                            <div class="search-actions">
+                                <button class="btn btn-primary" id="searchLocationByContact">🔍 Tìm vị trí</button>
+                                <button class="btn btn-secondary" id="locationResetBtn">🔄 Làm mới</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Time Filter Row -->
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>Từ ngày:</label>
+                                <input type="date" id="locationDateFrom">
+                            </div>
+                            <div class="filter-group">
+                                <label>Đến ngày:</label>
+                                <input type="date" id="locationDateTo">
+                            </div>
+                            <div class="filter-group">
+                                <label>Từ giờ:</label>
+                                <select id="locationTimeFrom">
+                                    <option value="">Tất cả</option>
+                                    <option value="00:00">00:00</option>
+                                    <option value="00:30">00:30</option>
+                                    <option value="01:00">01:00</option>
+                                    <option value="01:30">01:30</option>
+                                    <option value="02:00">02:00</option>
+                                    <option value="02:30">02:30</option>
+                                    <option value="03:00">03:00</option>
+                                    <option value="03:30">03:30</option>
+                                    <option value="04:00">04:00</option>
+                                    <option value="04:30">04:30</option>
+                                    <option value="05:00">05:00</option>
+                                    <option value="05:30">05:30</option>
+                                    <option value="06:00">06:00</option>
+                                    <option value="06:30">06:30</option>
+                                    <option value="07:00">07:00</option>
+                                    <option value="07:30">07:30</option>
+                                    <option value="08:00">08:00</option>
+                                    <option value="08:30">08:30</option>
+                                    <option value="09:00">09:00</option>
+                                    <option value="09:30">09:30</option>
+                                    <option value="10:00">10:00</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="11:00">11:00</option>
+                                    <option value="11:30">11:30</option>
+                                    <option value="12:00">12:00</option>
+                                    <option value="12:30">12:30</option>
+                                    <option value="13:00">13:00</option>
+                                    <option value="13:30">13:30</option>
+                                    <option value="14:00">14:00</option>
+                                    <option value="14:30">14:30</option>
+                                    <option value="15:00">15:00</option>
+                                    <option value="15:30">15:30</option>
+                                    <option value="16:00">16:00</option>
+                                    <option value="16:30">16:30</option>
+                                    <option value="17:00">17:00</option>
+                                    <option value="17:30">17:30</option>
+                                    <option value="18:00">18:00</option>
+                                    <option value="18:30">18:30</option>
+                                    <option value="19:00">19:00</option>
+                                    <option value="19:30">19:30</option>
+                                    <option value="20:00">20:00</option>
+                                    <option value="20:30">20:30</option>
+                                    <option value="21:00">21:00</option>
+                                    <option value="21:30">21:30</option>
+                                    <option value="22:00">22:00</option>
+                                    <option value="22:30">22:30</option>
+                                    <option value="23:00">23:00</option>
+                                    <option value="23:30">23:30</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Đến giờ:</label>
+                                <select id="locationTimeTo">
+                                    <option value="">Tất cả</option>
+                                    <option value="00:00">00:00</option>
+                                    <option value="00:30">00:30</option>
+                                    <option value="01:00">01:00</option>
+                                    <option value="01:30">01:30</option>
+                                    <option value="02:00">02:00</option>
+                                    <option value="02:30">02:30</option>
+                                    <option value="03:00">03:00</option>
+                                    <option value="03:30">03:30</option>
+                                    <option value="04:00">04:00</option>
+                                    <option value="04:30">04:30</option>
+                                    <option value="05:00">05:00</option>
+                                    <option value="05:30">05:30</option>
+                                    <option value="06:00">06:00</option>
+                                    <option value="06:30">06:30</option>
+                                    <option value="07:00">07:00</option>
+                                    <option value="07:30">07:30</option>
+                                    <option value="08:00">08:00</option>
+                                    <option value="08:30">08:30</option>
+                                    <option value="09:00">09:00</option>
+                                    <option value="09:30">09:30</option>
+                                    <option value="10:00">10:00</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="11:00">11:00</option>
+                                    <option value="11:30">11:30</option>
+                                    <option value="12:00">12:00</option>
+                                    <option value="12:30">12:30</option>
+                                    <option value="13:00">13:00</option>
+                                    <option value="13:30">13:30</option>
+                                    <option value="14:00">14:00</option>
+                                    <option value="14:30">14:30</option>
+                                    <option value="15:00">15:00</option>
+                                    <option value="15:30">15:30</option>
+                                    <option value="16:00">16:00</option>
+                                    <option value="16:30">16:30</option>
+                                    <option value="17:00">17:00</option>
+                                    <option value="17:30">17:30</option>
+                                    <option value="18:00">18:00</option>
+                                    <option value="18:30">18:30</option>
+                                    <option value="19:00">19:00</option>
+                                    <option value="19:30">19:30</option>
+                                    <option value="20:00">20:00</option>
+                                    <option value="20:30">20:30</option>
+                                    <option value="21:00">21:00</option>
+                                    <option value="21:30">21:30</option>
+                                    <option value="22:00">22:00</option>
+                                    <option value="22:30">22:30</option>
+                                    <option value="23:00">23:00</option>
+                                    <option value="23:30">23:30</option>
+                                </select>
+                            </div>
+                            <div class="search-actions">
+                                <button class="btn btn-primary" id="filterLocation">🔍 Lọc</button>
+                                <button class="btn btn-secondary" id="resetLocationFilters">🔄 Làm mới</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Statistics Row -->
+                        <div class="location-stats">
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalLocationsCount">0</div>
+                                <div class="stat-label">Tổng vị trí</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="filteredLocationsCount">0</div>
+                                <div class="stat-label">Vị trí trong khoảng</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalLocationInteractionsCount">0</div>
+                                <div class="stat-label">Tổng tương tác</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pagination Controls -->
+                    <div class="pagination-controls" id="locationPagination" style="display: none;">
+                        <button class="btn btn-secondary" id="locationFirstBtn" onclick="cdrAnalyzer.locationFirstPage()" disabled title="Trang đầu">⏮</button>
+                        <button class="btn btn-secondary" id="locationPrevBtn" onclick="cdrAnalyzer.locationPreviousPage()" disabled title="Trang trước">◀</button>
+                        <span class="pagination-info">
+                            Trang 
+                            <input type="number" id="locationPageInput" min="1" max="1" value="1" style="width: 60px; padding: 4px; text-align: center; border: 1px solid #ddd; border-radius: 4px;" onchange="cdrAnalyzer.locationGoToPage(parseInt(this.value))" onkeypress="if(event.key === 'Enter') { cdrAnalyzer.locationGoToPage(parseInt(this.value)); this.blur(); }">
+                            / <span id="locationTotalPagesDisplay">1</span>
+                        </span>
+                        <button class="btn btn-secondary" id="locationNextBtn" onclick="cdrAnalyzer.locationNextPage()" title="Trang sau">▶</button>
+                        <button class="btn btn-secondary" id="locationLastBtn" onclick="cdrAnalyzer.locationLastPage()" disabled title="Trang cuối">⏭</button>
+            </div>
+
+            <div class="table-container">
+                        <table class="data-table" id="locationTable">
+                    <thead>
+                        <tr>
+                            <th>TT</th>
+                                    <th>LAC</th>
+                                    <th>CID</th>
+                                    <th>Mã tỉnh</th>
+                                    <th>Tên trạm BTS</th>
+                                    <th>Tần suất</th>
+                                    <th>Google Maps</th>
+                        </tr>
+                    </thead>
+                            <tbody id="locationBody"></tbody>
+                </table>
+            </div>
+            
+            <!-- Scroll to top button -->
+            <button class="scroll-to-top-btn" id="scrollToTopLocation" title="Lên đầu trang">↑</button>
+        </div>
+
+                <!-- Tab 6: Báo cáo -->
+                <div class="tab-pane" id="time-analysis">
+            <div class="tab-header">
+                        <h2>📊 Báo cáo</h2>
+            </div>
+
+                    <div class="charts-grid">
+            <div class="chart-container">
+                            <h3>Khung giờ hoạt động (24h)</h3>
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+                        
+                        <div class="chart-container">
+                            <h3>Hoạt động theo thứ trong tuần</h3>
+                    <canvas id="weeklyChart"></canvas>
+                        </div>
+                            </div>
+            
+                    <!-- Message Classification Report -->
+                    <div style="margin-top: 2rem;">
+                        <div class="tab-header">
+                            <h3>📨 Phân loại tin nhắn</h3>
+            </div>
+                        <div class="message-classification" id="messageClassification">
+                            <!-- Phân loại tin nhắn sẽ được hiển thị ở đây -->
+        </div>
+    </div>
+
+                    <!-- IMEI/IMSI Changes Log -->
+                    <div style="margin-top: 2rem;">
+            <div class="tab-header">
+                            <h3>🔄 IMEI/IMSI</h3>
+                        </div>
+                        <div class="changes-log" id="changesLog">
+                            <!-- Nhật ký thay đổi sẽ được hiển thị ở đây -->
+                        </div>
+                </div>
+            </div>
+
+                <!-- Tab 7: Bản đồ -->
+                <div class="tab-pane" id="maps">
+                    <div class="tab-header">
+                        <h2>🗺️ Bản đồ vị trí</h2>
+                        <div class="tab-actions">
+                            <button class="btn btn-primary" id="importMapFiles">📁 Import file Excel</button>
+                            <button class="btn btn-success" id="drawFoliumMap">🗺️ Vẽ Folium Maps</button>
+                        </div>
+                    </div>
+                    
+                    <!-- File Import Section - Compact -->
+                    <div class="file-import-section-compact" id="fileImportSection" style="display: none;">
+                        <div class="file-input-row">
+                            <input type="file" id="mapFileInput" accept=".xlsx,.xls" multiple style="display: none;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('mapFileInput').click()">📁 Chọn file Excel</button>
+                            <span class="file-requirements-compact">📋 Cột bắt buộc: Phone, LAC, CID, Lat/Lon (hoặc Google Maps link). Tùy chọn: TT, MNC, Datetime</span>
+                        </div>
+                        
+                        <!-- File List - Compact -->
+                        <div class="file-list-compact" id="mapFileList" style="display: none;">
+                            <div class="file-list-header">
+                                <span class="file-count">📂 Đã import: <span id="fileCount">0</span> file</span>
+                                <button class="btn btn-sm btn-secondary" onclick="document.getElementById('mapFileInput').click()">➕ Thêm file</button>
+                            </div>
+                            <div class="file-items-compact" id="mapFileItems"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Maps Container - Compact -->
+                    <div class="maps-container-compact">
+                        <div class="maps-placeholder-compact" id="mapsPlaceholder">
+                            <div class="placeholder-content">
+                                <div class="placeholder-icon">🗺️</div>
+                                <div class="placeholder-text">
+                                    <h3>Chức năng bản đồ</h3>
+                                    <p>Import file Excel có dữ liệu vị trí để tạo bản đồ</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="loading-container-compact" id="loadingContainer" style="display: none;">
+                            <div class="loading-content">
+                                <div class="loading-icon">⏳</div>
+                                <div class="loading-text">
+                                    <h3>Đang vẽ bản đồ...</h3>
+                                    <div class="progress-bar-compact">
+                                        <div class="progress-fill" id="progressFill"></div>
+                                    </div>
+                                    <p id="progressText">0%</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="map-result-compact" id="mapResult" style="display: none;">
+                            <div class="result-content">
+                                <div class="result-icon">✅</div>
+                                <div class="result-text">
+                                    <h3>Bản đồ đã được tạo!</h3>
+                                    <p>Click "Mở bản đồ" để xem trong tab mới hoặc "Tải bản đồ" để lưu file</p>
+                                </div>
+                            </div>
+                            <div class="map-actions">
+                                <button class="btn btn-primary" id="openMapBtn">🗺️ Mở bản đồ</button>
+                                <button class="btn btn-info" id="downloadMapFile">💾 Tải bản đồ</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 8: So sánh file -->
+                <div class="tab-pane" id="compare">
+                    <div class="compare-layout-vertical">
+                        <!-- Top Section: Options -->
+                        <div class="compare-top-section">
+                            <!-- Analysis Options -->
+                            <div class="compare-options-compact">
+                                <h3>🎯 Tùy chọn so sánh:</h3>
+                                <div class="options-list-horizontal">
+                                    <div class="option-item-horizontal">
+                                        <button class="btn btn-primary" id="analyzeSharedContacts">
+                                            📞 Số liên lạc chung
+                                        </button>
+                                        <p>Tìm số liên lạc chung giữa tất cả số chủ</p>
+                                    </div>
+                                    <div class="option-item-horizontal">
+                                        <button class="btn btn-primary" id="analyzeSharedIMEI">
+                                            📱 IMEI chung
+                                        </button>
+                                        <p>Tìm IMEI chung giữa tất cả số chủ</p>
+                                    </div>
+                                    <div class="option-item-horizontal">
+                                        <button class="btn btn-primary" id="analyzeSharedLocations">
+                                            📍 Vị trí chung
+                                        </button>
+                                        <p>Tìm vị trí chung giữa tất cả số chủ</p>
+                                    </div>
+                                    <div class="option-item-horizontal">
+                                        <button class="btn btn-primary" id="analyzeTwoFiles">
+                                            🔄 So sánh 2 file
+                                        </button>
+                                        <p>So sánh giữa 2 file (User vs Target)</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Multiple Files Comparison Selection -->
+                            <div class="compare-two-files-section" id="compareTwoFilesSection" style="display: none;">
+                                <h3>📋 Chọn nhiều số chủ để so sánh:</h3>
+                                <div class="file-select-row">
+                                    <div class="file-select-group" style="flex: 1 1 100%;">
+                                        <label>Chọn các số chủ cần so sánh (ít nhất 2 số chủ):</label>
+                                        <div class="selected-files-summary" id="compareSelectedSummary" style="border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #f8fafc; min-height: 48px;">
+                                            Chưa chọn số chủ nào
+                                        </div>
+                                        <button class="btn btn-outline" type="button" id="openCompareFilesModal" onclick="if(typeof openCompareFilesModal === 'function') openCompareFilesModal(); else console.error('openCompareFilesModal function not found');" style="margin-top: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">
+                                            📂 Chọn số chủ so sánh
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="file-select-row" style="margin-top: 1rem;">
+                                    <div class="file-select-group">
+                                        <label>Loại so sánh:</label>
+                                        <select id="compareType" class="file-select-dropdown">
+                                            <option value="contacts">📞 Số liên lạc</option>
+                                            <option value="imei">📱 IMEI</option>
+                                            <option value="location">📍 Vị trí</option>
+                                        </select>
+                                    </div>
+                                    <div class="file-select-group">
+                                        <button class="btn btn-success" id="performTwoFilesCompare" style="margin-top: 24px;">
+                                            🔍 Thực hiện so sánh
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Info Section -->
+                            <div class="compare-info-section">
+                                <div class="info-item">
+                                    <strong>📁 File đã import:</strong>
+                                    <span id="compareFilesCount">0</span>
+                                </div>
+                                <div class="info-item">
+                                    <strong>✅ File đã phân tích:</strong>
+                                    <span id="compareAnalyzedCount">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bottom Section: Results -->
+                        <div class="compare-results-section">
+                            <div class="compare-results-compact" id="compareResults" style="display: none;">
+                                <div class="results-header-compact">
+                                    <h3 id="compareResultsTitle">📊 Kết quả so sánh</h3>
+                                    <div class="results-actions-compact">
+                                        <button class="btn btn-success btn-sm" id="exportCurrentResults">💾 Xuất Excel</button>
+                                        <button class="btn btn-secondary btn-sm" id="clearResults">🗑️ Xóa</button>
+                </div>
+            </div>
+            
+                                <!-- Search and Filter Container -->
+                                <div class="search-container">
+                                    <div class="search-row">
+                                        <div class="search-group" style="position: relative;">
+                                            <input type="text" id="compareSearch" placeholder="🔍 Tìm kiếm kết quả..." class="search-input">
+                                            <button type="button" id="clearCompareSearch" class="search-clear-btn" onclick="if(typeof clearCompareSearch === 'function') clearCompareSearch();" style="display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #64748b; cursor: pointer; font-size: 18px; padding: 4px 8px; line-height: 1;">✕</button>
+                </div>
+                                        <div class="search-actions">
+                                            <button class="btn btn-primary" id="filterCompareResults">🔍 Lọc</button>
+                                            <button class="btn btn-secondary" id="resetCompareResults">🔄 Làm mới</button>
+                </div>
+                                    </div>
+                                    
+                                    <div class="search-results">
+                                        <span id="compareResultsCount">📊 Kết quả: 0/0</span>
+                </div>
+            </div>
+
+                                <!-- Pagination Controls -->
+                                <div class="pagination-controls" id="comparePagination" style="display: none;">
+                                    <button class="btn btn-secondary" id="firstComparePageBtn" onclick="cdrAnalyzer.compareFirstPage()" disabled title="Trang đầu">⏮</button>
+                                    <button class="btn btn-secondary" id="prevComparePageBtn" onclick="cdrAnalyzer.comparePreviousPage()" disabled title="Trang trước">◀</button>
+                                    <span class="pagination-info">
+                                        Trang 
+                                        <input type="number" id="comparePageInput" min="1" max="1" value="1" style="width: 60px; padding: 4px; text-align: center; border: 1px solid #ddd; border-radius: 4px;" onchange="cdrAnalyzer.compareGoToPage(parseInt(this.value))" onkeypress="if(event.key === 'Enter') { cdrAnalyzer.compareGoToPage(parseInt(this.value)); this.blur(); }">
+                                        / <span id="compareTotalPagesDisplay">1</span>
+                                    </span>
+                                    <button class="btn btn-secondary" id="nextComparePageBtn" onclick="cdrAnalyzer.compareNextPage()" title="Trang sau">▶</button>
+                                    <button class="btn btn-secondary" id="lastComparePageBtn" onclick="cdrAnalyzer.compareLastPage()" disabled title="Trang cuối">⏭</button>
+                                </div>
+                                
+                                <div class="table-container-compact">
+                                    <table class="data-table compare-table-horizontal" id="compareResultsTable">
+                                        <thead id="compareTableHead"></thead>
+                                        <tbody id="compareTableBody"></tbody>
+                </table>
+                                </div>
+            </div>
+            
+                            <!-- Placeholder when no results -->
+                            <div class="results-placeholder" id="resultsPlaceholder">
+                                <div class="placeholder-content">
+                                    <div class="placeholder-icon">📊</div>
+                                    <div class="placeholder-text">
+                                        <h3>Chưa có kết quả</h3>
+                                        <p>Chọn tùy chọn so sánh để xem kết quả</p>
+            </div>
+        </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Cookies -->
+    <div class="modal" id="cookiesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🍪 Nhập Cookies String</h3>
+                <button class="modal-close" id="closeCookies">✕</button>
+        </div>
+            <div class="modal-body">
+                <p>Nhập cookies string từ website imei.info để tra cứu IMEI:</p>
+                <textarea id="cookiesInput" placeholder="Nhập cookies string ở đây..." rows="8" style="width: 100%; margin: 10px 0;"></textarea>
+                
+                <div style="background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 5px; padding: 10px; margin: 10px 0;">
+                    <strong>🎯 Sử dụng script gốc "17. Tool IMEI Full.py":</strong>
+                    <p style="margin: 5px 0;">Để có kết quả tra cứu IMEI chính xác 100%, hãy:</p>
+                    <ol style="margin: 5px 0; padding-left: 20px;">
+                        <li>Copy file <strong>"17. Tool IMEI Full.py"</strong> vào thư mục CDR Analyzer</li>
+                        <li>Khởi động server: <code style="background: #f1f1f1; padding: 2px 5px;">python imei_server.py</code></li>
+                        <li>Hoặc double-click: <strong>start-python-server.bat</strong></li>
+                    </ol>
+                    <p style="margin: 5px 0;">✅ Server tự động detect và sử dụng script gốc của bạn</p>
+                    <p style="margin: 5px 0; font-size: 0.9em; color: #155724;">🚀 Ưu điểm: Sử dụng logic đã test, kết quả chính xác, bypass Cloudflare thành công!</p>
+    </div>
+
+                <div class="modal-actions">
+                    <button class="btn btn-primary" id="saveCookies">💾 Lưu Cookies</button>
+                    <button class="btn btn-secondary" id="cancelCookies">❌ Hủy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal File Manager -->
+    <div class="modal" id="fileManagerModal">
+        <div class="modal-content file-manager-modal">
+            <div class="modal-header">
+                <h3>📁 Quản lý file</h3>
+                <button class="modal-close" id="closeFileManager">✕</button>
+            </div>
+            <div class="modal-body file-manager-body">
+                <div class="upload-container">
+                    <div class="file-drop-zone" id="fileDropZoneModal">
+                        <div class="drop-zone-content">
+                            <div class="upload-icon">📁</div>
+                            <h3>Kéo thả file Excel vào đây (có thể chọn nhiều file)</h3>
+                            <p>hoặc</p>
+                            <label for="fileInputModal" class="upload-btn">Chọn file Excel (nhiều file)</label>
+                            <input type="file" id="fileInputModal" accept=".xlsx,.xls" multiple style="display: none;">
+                        </div>
+                    </div>
+                    
+                    <!-- File List with Template Selection -->
+                    <div class="files-list-container" id="filesListContainerModal" style="display: none;">
+                        <div class="files-list-header">
+                            <h4>📂 Danh sách file đã import (<span id="filesCountModal">0</span>)</h4>
+                            <button class="btn btn-secondary btn-sm" id="addMoreFilesBtnModal">➕ Thêm file</button>
+                        </div>
+                        <div class="files-list" id="filesListModal">
+                            <!-- File items will be added here dynamically -->
+                        </div>
+                        <div class="files-actions">
+                            <button class="btn btn-primary" id="analyzeAllFilesBtnModal">🚀 Phân tích tất cả</button>
+                            <button class="btn btn-danger" id="clearAllFilesBtnModal">🗑️ Xóa tất cả</button>
+                        </div>
+                    </div>
+                    
+                    <!-- File Selection After Analysis -->
+                    <div class="file-selection-container" id="fileSelectionContainerModal" style="display: none;">
+                        <div class="file-selection-header">
+                            <h4>📊 Chọn file để xem kết quả phân tích</h4>
+                        </div>
+                        <div class="file-selection-list" id="fileSelectionListModal">
+                            <!-- Analyzed file items will be added here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Edit Google Maps Link -->
+    <div class="modal" id="editGoogleMapsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✏️ Sửa Link Google Maps</h3>
+                <button class="modal-close" id="closeGoogleMaps">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="location-info">
+                    <p><strong>LAC:</strong> <span id="editLac"></span></p>
+                    <p><strong>Cell:</strong> <span id="editCell"></span></p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="googleMapsInput">Link Google Maps:</label>
+                    <input type="url" id="googleMapsInput" placeholder="https://www.google.com/maps?q=21.0285,105.8542" style="width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px;">
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="btn btn-primary" id="saveGoogleMaps">💾 Lưu</button>
+                    <button class="btn btn-secondary" id="cancelGoogleMaps">❌ Hủy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compare Files Modal -->
+    <div class="modal" id="compareFilesModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📂 Chọn số chủ để so sánh</h3>
+                <button class="modal-close" id="closeCompareFilesModal" onclick="if(typeof closeCompareFilesModal === 'function') closeCompareFilesModal();">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>Chọn ít nhất 2 số chủ để thực hiện so sánh.</p>
+                <div style="display: flex; gap: 12px; margin-bottom: 12px; padding: 8px; background: #f8fafc; border-radius: 6px;">
+                    <button type="button" class="btn btn-sm" id="selectAllCompareFiles" onclick="if(typeof selectAllCompareFiles === 'function') selectAllCompareFiles();" style="background: #667eea; color: white; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">
+                        ✓ Chọn tất cả
+                    </button>
+                    <button type="button" class="btn btn-sm" id="deselectAllCompareFiles" onclick="if(typeof deselectAllCompareFiles === 'function') deselectAllCompareFiles();" style="background: #94a3b8; color: white; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">
+                        ✗ Bỏ chọn tất cả
+                    </button>
+                </div>
+                <div id="compareFilesCheckboxList" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: white;">
+                    <!-- File checkboxes will be added here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="applyCompareFilesSelection" onclick="if(typeof applyCompareFilesSelection === 'function') applyCompareFilesSelection();">✅ Xác nhận</button>
+                <button class="btn btn-danger" id="cancelCompareFilesSelection" onclick="if(typeof closeCompareFilesModal === 'function') closeCompareFilesModal();">❌ Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteConfirmModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚠️ Xác nhận xóa</h3>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmMessage">Bạn có chắc muốn xóa file này?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="deleteConfirmYes">Có</button>
+                <button class="btn btn-danger" id="deleteConfirmNo">Không</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

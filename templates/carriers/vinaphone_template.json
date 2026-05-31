@@ -1,0 +1,81 @@
+{
+  "carrier": "vinaphone",
+  "carrier_code": "VNP",
+  "carrier_name": "Vinaphone VNP",
+  "_source": "Confirmed from Vinaphone.xlsx real file",
+
+  "structure": {
+    "sheet_name": "Sheet1",
+    "pii_block": false,
+    "header_row_excel": 1,
+    "header_row_index": 0,
+    "data_start_excel": 2,
+    "data_start_index": 1,
+    "max_col": 24,
+    "multi_subscriber": true,
+    "subscriber_column": "a_subs"
+  },
+
+  "date_format": {
+    "date_column": "date",
+    "time_column": "time",
+    "date_pattern": "YYMMDD",
+    "time_pattern": "HHMMSS",
+    "note": "date=251001 means 2025-10-01, time=124334 means 12:43:34"
+  },
+
+  "real_headers": [
+    "a_subs", "imsi", "imei", "date", "time", "duration",
+    "b_subs", "rec_type", "tgno_ic", "cic_ic", "tgno_og", "cic_og",
+    "mskey", "lac", "cellid", "cell_name", "thirdparty", "ss_code",
+    "serv_cent", "marked", "msc", "call_type", "srv_id", "file_seq"
+  ],
+
+  "column_map": {
+    "source_number":  0,
+    "imsi":           1,
+    "imei":           2,
+    "date":           3,
+    "time":           4,
+    "duration":       5,
+    "target_number":  6,
+    "comm_type":      7,
+    "lac":            13,
+    "cell_id":        14,
+    "bts_address":    15
+  },
+
+  "rec_type_map": {
+    "SMO": "SMS đi",
+    "SMT": "SMS đến",
+    "MOC": "Gọi đi",
+    "MTC": "Gọi đến",
+    "SS":  "Dịch vụ"
+  },
+
+  "subscriber_handling": {
+    "group_by": "a_subs",
+    "invalid_if_empty": true,
+    "phone_prefix_84": "normalize to 0 prefix",
+    "note": "File Vinaphone chứa nhiều thuê bao trong 1 file"
+  },
+
+  "column_aliases": {
+    "source_number": ["a_subs", "a-subs", "calling", "msisdn", "subscriber"],
+    "target_number": ["b_subs", "b-subs", "called", "destination"],
+    "timestamp":     ["date", "datetime", "call_time"],
+    "duration":      ["duration", "thoi_luong", "seconds"],
+    "imsi":          ["imsi"],
+    "imei":          ["imei"],
+    "comm_type":     ["rec_type", "call_type", "service_type", "loai"],
+    "lac":           ["lac", "location_area", "location area"],
+    "cell_id":       ["cellid", "cell_id", "ci"],
+    "bts_address":   ["cell_name", "cellname", "site_name", "station"]
+  },
+
+  "detection": {
+    "sheet_name": "Sheet1",
+    "signature_headers": ["a_subs", "b_subs", "lac", "cellid"],
+    "confidence_markers": ["a_subs", "b_subs", "imsi", "rec_type", "cellid"]
+  }
+}

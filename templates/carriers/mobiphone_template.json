@@ -1,0 +1,79 @@
+{
+  "carrier": "mobiphone",
+  "carrier_code": "MBF",
+  "carrier_name": "Mobiphone MBF",
+  "_source": "Confirmed from Mobiphone.xlsx real file",
+
+  "structure": {
+    "sheet_name": "sheet 1",
+    "pii_format": "single_column_colon_separated",
+    "pii_rows": "1-16",
+    "date_range_row_excel": 17,
+    "header_row_excel": 18,
+    "header_row_index": 17,
+    "data_start_excel": 19,
+    "data_start_index": 18,
+    "max_col": 9
+  },
+
+  "pii_regex_patterns": {
+    "phone_raw":       "Số điện thoại\\s*:\\s*([\\d]+)",
+    "full_name":       "Tên thuê bao\\s*:\\s*(.+)",
+    "subscription_type": "Loại thuê bao\\s*:\\s*(.+)",
+    "activation_date": "Ngày nhập mạng\\s*:\\s*(.+)",
+    "id_doc_number":   "Số CMND\\s*:\\s*([\\d]+)",
+    "id_issue_date":   "Ngày cấp CMND\\s*:\\s*(.+)",
+    "id_issue_authority": "Nơi cấp CMND\\s*:\\s*(.+)",
+    "date_of_birth":   "Năm sinh\\s*:\\s*(.+)",
+    "address":         "Địa chỉ/hộ khẩu\\s*:\\s*(.+)"
+  },
+
+  "real_headers": [
+    "Số thứ tự", "Thời gian", "Loại cuộc gọi",
+    "Số chủ", "Số liên hệ", "Thời lượng",
+    "Mã địa danh", "Tên địa danh", "IMEI"
+  ],
+
+  "column_map": {
+    "row_num":        0,
+    "timestamp":      1,
+    "comm_type":      2,
+    "source_number":  3,
+    "target_number":  4,
+    "duration":       5,
+    "ma_dia_danh":    6,
+    "bts_address":    7,
+    "imei":           8
+  },
+
+  "ma_dia_danh_format": {
+    "description": "452-01-19100-460035-11 = MCC-MNC-LAC-CellID-Sector",
+    "separator": "-",
+    "parts": {
+      "mcc":     0,
+      "mnc":     1,
+      "lac":     2,
+      "cell_id": 3,
+      "sector":  4
+    }
+  },
+
+  "column_aliases": {
+    "timestamp":     ["thời gian", "thoi gian", "time", "datetime"],
+    "comm_type":     ["loại cuộc gọi", "loai cuoc goi", "call type", "loại"],
+    "source_number": ["số chủ", "so chu", "subscriber", "msisdn", "số điện thoại chủ"],
+    "target_number": ["số liên hệ", "so lien he", "called", "contact number"],
+    "duration":      ["thời lượng", "thoi luong", "duration", "seconds"],
+    "ma_dia_danh":   ["mã địa danh", "ma dia danh", "cell code", "cell composite"],
+    "bts_address":   ["tên địa danh", "ten dia danh", "location name", "bts name"],
+    "imei":          ["imei", "device id", "equipment"]
+  },
+
+  "detection": {
+    "sheet_name": "sheet 1",
+    "signature_cells": [[0, 0, "BÁO CÁO CHI TIẾT DỮ LIỆU ONLINE"]],
+    "confidence_markers": [
+      "sheet 1", "Số thứ tự", "Số chủ", "Mã địa danh", "Tên địa danh"
+    ]
+  }
+}

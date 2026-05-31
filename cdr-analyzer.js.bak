@@ -1,0 +1,1285 @@
+/**
+ * cdr-analyzer.js — Sentinel Core CDR Analyzer Engine
+ * 9-tab CDR analysis: subscriber, calls, IMEI, contacts,
+ *                     time, location, imei/imsi, map, compare
+ *
+ * Lưu dữ liệu trong localStorage. Hoàn toàn client-side, không server.
+ */
+
+const CDRAnalyzer = (() => {
+  'use strict';
+
+  const LS_KEY = 'sentinel_cdr_v3';
+
+  // ══════════════════════════════════════════════════════════
+  // STATE
+  // ══════════════════════════════════════════════════════════
+
+  let _S = {
+    parseResult:     null,   // raw ParseResult từ CellLacParser
+    records:         [],     // all normalized records
+    subscriber:      null,   // {phone, name, address, note, ...}
+    subscriberKey:   null,   // current selected subscriber (Vinaphone)
+    currentTab:      'subscriber',
+    callsPage:       1,
+    callsFiltered:   [],
+    imeiData:        {},     // { imei: {count, valid, model, note} }
+    contactsData:    {},     // { phone: {count, out, in, sms, zalo, fb, tg, note} }
+    locationData:    {},     // { lac_cell: {lac,cell,province,bts,count,gmap} }
+    compareFiles:    [],     // [{name, records}]
+    compareResult:   [],
+    mapHtml:         null,
+    charts:          {},     // Chart.js instances
+  };
+
+  // ══════════════════════════════════════════════════════════
+  // INIT
+  // ══════════════════════════════════════════════════════════
+
+  function init() {
+    _bindUpload();
+    _bindTabs();
+    _loadFromStorage();
+    if (_S.records.length > 0) {
+      _showData();
+    }
+    // Map dropzone
+    _bindSimpleDropzone('map-dropzone', 'map-file-input', _handleMapFile);
+    // Compare dropzone
+    _bindCompareDropzone();
+    console.log('[CDRAnalyzer] Initialized');
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // UPLOAD
+  // ══════════════════════════════════════════════════════════
+
+  function _bindUpload() {
+    const dz     = document.getElementById('cdr-dropzone');
+    const fi     = document.getElementById('cdr-file-input');
+    if (!dz || !fi) return;
+
+    dz.addEventListener('click', () => fi.click());
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      const f = e.dataTransfer?.files?.[0];
+      if (f) _processUpload(f);
+    });
+    fi.addEventListener('change', () => {
+      const f = fi.files?.[0];
+      if (f) _processUpload(f);
+      fi.value = '';
+    });
+  }
+
+  async function _processUpload(file) {
+    const carrierKey = document.getElementById('cdr-carrier-select')?.value || 'auto';
+    _setStatus('⏳ Đang phân tích...', 'info');
+    document.getElementById('cdr-dz-text').textContent = file.name;
+
+    try {
+      const result = await CellLacParser.parseFile(file, carrierKey);
+      _S.parseResult = result;
+      _S.records = result.records;
+
+      // Build derived data
+      _buildSubscriberFromPii(result);
+      _buildImeiData(result.records);
+      _buildContactsData(result.records);
+      _buildLocationData(result.records);
+
+      _saveToStorage();
+      _showData();
+
+      const auto = result.auto_detected ? ' (auto)' : '';
+      _setStatus(
+        `✓ ${result.carrier_name}${auto} — ${result.valid_count} bản ghi | ` +
+        `${result.error_count} lỗi`,
+        'ok'
+      );
+    } catch (err) {
+      console.error('[CDRAnalyzer] Upload error:', err);
+      _setStatus(`✗ ${err.message}`, 'error');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DATA BUILDERS
+  // ══════════════════════════════════════════════════════════
+
+  function _buildSubscriberFromPii(result) {
+    const pii = result.pii || {};
+    const existing = _S.subscriber || {};
+    _S.subscriber = {
+      phone:    pii.phone_raw    || existing.phone    || result.records[0]?.subscriber || '',
+      name:     pii.full_name    || existing.name     || '',
+      dob:      pii.date_of_birth|| existing.dob      || '',
+      address:  pii.address      || existing.address  || '',
+      id_doc:   pii.id_doc_number|| existing.id_doc   || '',
+      activation: pii.activation || existing.activation || '',
+      carrier:  result.carrier_name,
+      note:     existing.note    || '',
+      report_from: pii.report_from || '',
+      report_to:   pii.report_to   || '',
+    };
+
+    // Vinaphone multi-subscriber
+    if (result.multi_subscriber && result.subscribers) {
+      const phones = Object.keys(result.subscribers);
+      _S.subscriberKey = _S.subscriberKey || phones[0];
+    }
+  }
+
+  function _buildImeiData(records) {
+    const existing = _S.imeiData || {};
+    _S.imeiData = {};
+    records.forEach(r => {
+      const imei = r.imei;
+      if (!imei) return;
+      if (!_S.imeiData[imei]) {
+        _S.imeiData[imei] = {
+          count: 0,
+          valid: _isValidImei(imei),
+          model: existing[imei]?.model || '',
+          note:  existing[imei]?.note  || '',
+        };
+      }
+      _S.imeiData[imei].count++;
+    });
+  }
+
+  function _buildContactsData(records) {
+    const existing = _S.contactsData || {};
+    _S.contactsData = {};
+    records.forEach(r => {
+      const contact = r.target || r.source;
+      const sub     = r.subscriber;
+      const phone   = (contact && contact !== sub) ? contact : null;
+      if (!phone || phone.length < 5) return;
+
+      if (!_S.contactsData[phone]) {
+        _S.contactsData[phone] = {
+          count: 0, out: 0, in: 0, sms: 0,
+          zalo:  existing[phone]?.zalo  || '',
+          fb:    existing[phone]?.fb    || '',
+          tg:    existing[phone]?.tg    || '',
+          note:  existing[phone]?.note  || '',
+          firstSeen: null, lastSeen: null,
+        };
+      }
+      const c = _S.contactsData[phone];
+      c.count++;
+      const dir = (r.direction || '').toLowerCase();
+      const typ = (r.comm_type || '').toLowerCase();
+      if (dir.includes('đi') || dir === 'out' || dir === 'mo') c.out++;
+      if (dir.includes('đến') || dir === 'in'  || dir === 'mt') c.in++;
+      if (typ.includes('sms') || typ.includes('tin')) c.sms++;
+      if (r.timestamp) {
+        if (!c.firstSeen || r.timestamp < c.firstSeen) c.firstSeen = r.timestamp;
+        if (!c.lastSeen  || r.timestamp > c.lastSeen)  c.lastSeen  = r.timestamp;
+      }
+    });
+  }
+
+  function _buildLocationData(records) {
+    const existing = _S.locationData || {};
+    _S.locationData = {};
+    records.forEach(r => {
+      const lac  = r.lac;
+      const cell = r.cell_id;
+      if (!lac && !cell) return;
+      const key = `${lac || '?'}_${cell || '?'}`;
+      if (!_S.locationData[key]) {
+        _S.locationData[key] = {
+          lac, cell,
+          province: r.province || '',
+          bts:      r.bts_name || (existing[key]?.bts || ''),
+          count:    0,
+          gmap:     existing[key]?.gmap || '',
+          lat:      r.latitude  || null,
+          lng:      r.longitude || null,
+        };
+      }
+      _S.locationData[key].count++;
+      if (!_S.locationData[key].province && r.province) _S.locationData[key].province = r.province;
+      if (!_S.locationData[key].bts && r.bts_name)      _S.locationData[key].bts = r.bts_name;
+    });
+  }
+
+  function _isValidImei(imei) {
+    return /^\d{15}$/.test(imei);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // LOCAL STORAGE
+  // ══════════════════════════════════════════════════════════
+
+  function _saveToStorage() {
+    try {
+      const data = {
+        carrier:      _S.parseResult?.carrier,
+        carrier_name: _S.parseResult?.carrier_name,
+        file_name:    _S.parseResult?.file_name,
+        valid_count:  _S.parseResult?.valid_count,
+        records:      _S.records.slice(0, 10000), // cap at 10k for storage
+        subscriber:   _S.subscriber,
+        imeiData:     _S.imeiData,
+        contactsData: _S.contactsData,
+        locationData: _S.locationData,
+        savedAt:      new Date().toISOString(),
+      };
+      localStorage.setItem(LS_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn('[CDRAnalyzer] localStorage save failed:', e.message);
+    }
+  }
+
+  function _loadFromStorage() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      _S.records       = data.records       || [];
+      _S.subscriber    = data.subscriber    || null;
+      _S.imeiData      = data.imeiData      || {};
+      _S.contactsData  = data.contactsData  || {};
+      _S.locationData  = data.locationData  || {};
+      if (data.carrier && _S.records.length > 0) {
+        _S.parseResult = {
+          carrier: data.carrier, carrier_name: data.carrier_name,
+          file_name: data.file_name, valid_count: data.valid_count,
+          records: _S.records,
+        };
+        _setStatus(`📂 Đã tải từ bộ nhớ: ${data.carrier_name} — ${data.valid_count} bản ghi (${data.savedAt?.slice(0,10)})`, 'info');
+      }
+    } catch (e) {
+      console.warn('[CDRAnalyzer] localStorage load failed:', e.message);
+    }
+  }
+
+  function clearAll() {
+    if (!confirm('Xóa toàn bộ dữ liệu CDR khỏi bộ nhớ?')) return;
+    localStorage.removeItem(LS_KEY);
+    _S = { ...{
+      parseResult: null, records: [], subscriber: null, subscriberKey: null,
+      currentTab: 'subscriber', callsPage: 1, callsFiltered: [],
+      imeiData: {}, contactsData: {}, locationData: {},
+      compareFiles: [], compareResult: [], mapHtml: null, charts: {},
+    }};
+    _hideData();
+    _setStatus('🗑 Đã xóa toàn bộ dữ liệu', 'info');
+    document.getElementById('cdr-dz-text').textContent = 'Kéo thả hoặc chọn file CDR (XLSX / XLS)';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TABS
+  // ══════════════════════════════════════════════════════════
+
+  function _bindTabs() {
+    document.querySelectorAll('#cdr-tab-bar .cdr-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('#cdr-tab-bar .cdr-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _S.currentTab = tab;
+        _renderTab(tab);
+      });
+    });
+  }
+
+  function _showData() {
+    document.getElementById('cdr-empty').style.display       = 'none';
+    document.getElementById('cdr-export-all-btn').style.display = '';
+    document.getElementById('cdr-zip-btn').style.display     = '';
+    document.getElementById('cdr-clear-btn').style.display   = '';
+    _renderTab(_S.currentTab);
+    _renderVinaSubscriberSelector();
+  }
+
+  function _hideData() {
+    document.querySelectorAll('.cdr-tab-panel').forEach(p => p.style.display = 'none');
+    document.getElementById('cdr-empty').style.display = '';
+    document.getElementById('cdr-export-all-btn').style.display = 'none';
+    document.getElementById('cdr-zip-btn').style.display     = 'none';
+    document.getElementById('cdr-clear-btn').style.display   = 'none';
+  }
+
+  function _renderTab(tab) {
+    document.querySelectorAll('.cdr-tab-panel').forEach(p => p.style.display = 'none');
+    const panel = document.getElementById(`tab-${tab}`);
+    if (panel) panel.style.display = 'flex';
+
+    if (_S.records.length === 0) {
+      document.getElementById('cdr-empty').style.display = '';
+      return;
+    }
+
+    switch (tab) {
+      case 'subscriber': _renderSubscriber(); break;
+      case 'calls':      _renderCalls();      break;
+      case 'imei':       _renderImei();       break;
+      case 'contacts':   _renderContacts();   break;
+      case 'time':       _renderTime();       break;
+      case 'location':   _renderLocation();   break;
+      case 'imei_imsi':  _renderImeiImsi();   break;
+      case 'map':        /* user-triggered */ break;
+      case 'compare':    /* user-triggered */ break;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 1: SUBSCRIBER INFO
+  // ══════════════════════════════════════════════════════════
+
+  function _renderSubscriber() {
+    const sub = _S.subscriber || {};
+    const container = document.getElementById('sub-fields');
+    if (!container) return;
+
+    const fields = [
+      { key: 'phone',   label: 'Số điện thoại' },
+      { key: 'name',    label: 'Họ tên' },
+      { key: 'dob',     label: 'Ngày sinh' },
+      { key: 'address', label: 'Địa chỉ' },
+      { key: 'id_doc',  label: 'Số CCCD/CMND' },
+      { key: 'activation', label: 'Ngày kích hoạt' },
+      { key: 'carrier', label: 'Nhà mạng' },
+      { key: 'report_from', label: 'Từ ngày' },
+      { key: 'report_to',   label: 'Đến ngày' },
+      { key: 'note',    label: 'Ghi chú' },
+    ];
+
+    container.innerHTML = fields.map(f => `
+      <div class="sub-field-row">
+        <span class="sub-field-label">${f.label}</span>
+        <span class="sub-field-value" id="sub-val-${f.key}">${_esc(sub[f.key] || '—')}</span>
+        <input type="text" class="form-input sub-field-input" id="sub-inp-${f.key}"
+          value="${_esc(sub[f.key] || '')}" style="display:none;background:#0c0e12;">
+      </div>
+    `).join('');
+  }
+
+  function subscriberEdit() {
+    document.querySelectorAll('.sub-field-value').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.sub-field-input').forEach(el => el.style.display = '');
+    document.getElementById('sub-edit-btn').style.display   = 'none';
+    document.getElementById('sub-save-btn').style.display   = '';
+    document.getElementById('sub-cancel-btn').style.display = '';
+  }
+
+  function subscriberSave() {
+    const fields = ['phone','name','dob','address','id_doc','activation','carrier','report_from','report_to','note'];
+    fields.forEach(k => {
+      const inp = document.getElementById(`sub-inp-${k}`);
+      if (inp) _S.subscriber[k] = inp.value.trim();
+    });
+    _saveToStorage();
+    _renderSubscriber();
+    document.getElementById('sub-edit-btn').style.display   = '';
+    document.getElementById('sub-save-btn').style.display   = 'none';
+    document.getElementById('sub-cancel-btn').style.display = 'none';
+    _showToast('Đã lưu thông tin thuê bao', 'ok');
+  }
+
+  function subscriberCancel() {
+    _renderSubscriber();
+    document.getElementById('sub-edit-btn').style.display   = '';
+    document.getElementById('sub-save-btn').style.display   = 'none';
+    document.getElementById('sub-cancel-btn').style.display = 'none';
+  }
+
+  function subscriberReset() {
+    if (_S.parseResult?.pii) {
+      _buildSubscriberFromPii(_S.parseResult);
+      _saveToStorage();
+      _renderSubscriber();
+      _showToast('Đã khôi phục dữ liệu gốc', 'ok');
+    }
+  }
+
+  function _renderVinaSubscriberSelector() {
+    const subs = _S.parseResult?.subscribers;
+    const sel  = document.getElementById('sub-vina-selector');
+    const selEl = document.getElementById('sub-vina-select');
+    if (!sel || !selEl || !subs) return;
+
+    const phones = Object.keys(subs);
+    if (phones.length > 1) {
+      sel.style.display = '';
+      selEl.innerHTML = phones.map(p =>
+        `<option value="${p}" ${p === _S.subscriberKey ? 'selected' : ''}>${p} (${subs[p].length} bản ghi)</option>`
+      ).join('');
+    } else {
+      sel.style.display = 'none';
+    }
+  }
+
+  function selectSubscriber(phone) {
+    _S.subscriberKey = phone;
+    const subs = _S.parseResult?.subscribers;
+    if (subs?.[phone]) {
+      _S.records = subs[phone];
+      _buildContactsData(_S.records);
+      _buildImeiData(_S.records);
+      _buildLocationData(_S.records);
+    }
+    _renderTab(_S.currentTab);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 2: CALL HISTORY
+  // ══════════════════════════════════════════════════════════
+
+  function _renderCalls() {
+    _renderCallsHead();
+    callsFilter();
+  }
+
+  function _renderCallsHead() {
+    const thead = document.getElementById('calls-thead');
+    if (!thead) return;
+    const cols = ['#','Số chủ','Số liên hệ','Thời gian','TL (s)','IMEI','Tỉnh','Loại','Hướng','Địa chỉ/BTS','LAC','Cell'];
+    thead.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+  }
+
+  function callsFilter() {
+    const search   = (document.getElementById('calls-search')?.value || '').toLowerCase();
+    const type     = document.getElementById('calls-type')?.value || 'all';
+    const dateFrom = document.getElementById('calls-date-from')?.value || '';
+    const dateTo   = document.getElementById('calls-date-to')?.value   || '';
+    const hourFrom = parseInt(document.getElementById('calls-hour-from')?.value ?? '0') || 0;
+    const hourTo   = parseInt(document.getElementById('calls-hour-to')?.value ?? '23') || 23;
+
+    _S.callsFiltered = _S.records.filter(r => {
+      if (search) {
+        const haystack = `${r.source} ${r.target} ${r.timestamp} ${r.comm_type} ${r.bts_name} ${r.lac} ${r.cell_id}`.toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+
+      if (type !== 'all') {
+        const comm  = (r.comm_type || '').toLowerCase();
+        const dir   = (r.direction || '').toLowerCase();
+        const isVoice = !comm.includes('sms') && !comm.includes('tin nhắn');
+        const isSms   = comm.includes('sms') || comm.includes('tin nhắn');
+        const isOut   = dir.includes('đi') || dir === 'out' || comm.includes('đi');
+        const isIn    = dir.includes('đến') || dir === 'in' || comm.includes('đến');
+        if (type === 'voice_out' && !(isVoice && isOut)) return false;
+        if (type === 'voice_in'  && !(isVoice && isIn))  return false;
+        if (type === 'sms_out'   && !(isSms && isOut))   return false;
+        if (type === 'sms_in'    && !(isSms && isIn))    return false;
+      }
+
+      if (r.timestamp) {
+        const ts = r.timestamp;
+        const dateStr = ts.slice(0, 10).split('/').reverse().join('-'); // dd/mm/yyyy → yyyy-mm-dd
+        const normDate = ts.includes('-') ? ts.slice(0, 10) : dateStr;
+        if (dateFrom && normDate < dateFrom) return false;
+        if (dateTo   && normDate > dateTo)   return false;
+        const hourMatch = ts.match(/(\d{1,2}):\d{2}(:\d{2})?/);
+        if (hourMatch) {
+          const h = parseInt(hourMatch[1]);
+          if (h < hourFrom || h > hourTo) return false;
+        }
+      }
+
+      return true;
+    });
+
+    _S.callsPage = 1;
+    callsSetPage(1);
+  }
+
+  function callsSetPage(page) {
+    _S.callsPage = page;
+    const ps    = parseInt(document.getElementById('calls-pagesize')?.value || '50');
+    const total = _S.callsFiltered.length;
+    const pages = Math.max(1, Math.ceil(total / ps));
+    _S.callsPage = Math.min(_S.callsPage, pages);
+    const start = (_S.callsPage - 1) * ps;
+    const slice = _S.callsFiltered.slice(start, start + ps);
+
+    const tbody = document.getElementById('calls-tbody');
+    if (tbody) {
+      tbody.innerHTML = slice.map((r, i) => `
+        <tr>
+          <td style="font-family:var(--font-mono);color:var(--text-muted)">${start + i + 1}</td>
+          <td style="font-family:var(--font-mono)">${_esc(r.source || '')}</td>
+          <td style="font-family:var(--font-mono);color:var(--accent-cyan)">${_esc(r.target || '')}</td>
+          <td style="font-family:var(--font-mono);font-size:0.78rem">${_esc(r.timestamp || '')}</td>
+          <td>${_esc(r.duration || '')}</td>
+          <td style="font-family:var(--font-mono);font-size:0.72rem">${_esc(r.imei || '')}</td>
+          <td>${_esc(r.province || '')}</td>
+          <td><span class="badge ${_commBadge(r.comm_type)}">${_esc(r.comm_type || '')}</span></td>
+          <td>${_esc(r.direction || '')}</td>
+          <td style="font-size:0.72rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(r.bts_name || '')}</td>
+          <td style="font-family:var(--font-mono)">${_esc(r.lac || '')}</td>
+          <td style="font-family:var(--font-mono)">${_esc(r.cell_id || '')}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Stats
+    const statsEl = document.getElementById('calls-stats');
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <span class="mini-stat-chip">Tổng lọc: <strong>${total}</strong></span>
+        <span class="mini-stat-chip">Trang: <strong>${_S.callsPage}/${pages}</strong></span>
+      `;
+    }
+
+    // Pagination
+    const pag = document.getElementById('calls-pagination');
+    if (pag) {
+      pag.style.display = 'flex';
+      const prevDis = _S.callsPage <= 1;
+      const nextDis = _S.callsPage >= pages;
+      pag.innerHTML = `
+        <button class="btn-page" onclick="CDRAnalyzer.callsSetPage(1)" ${prevDis?'disabled':''}>«</button>
+        <button class="btn-page" onclick="CDRAnalyzer.callsSetPage(${_S.callsPage - 1})" ${prevDis?'disabled':''}>◀</button>
+        <span class="page-info">${_S.callsPage} / ${pages} (${total} bản ghi)</span>
+        <button class="btn-page" onclick="CDRAnalyzer.callsSetPage(${_S.callsPage + 1})" ${nextDis?'disabled':''}>▶</button>
+        <button class="btn-page" onclick="CDRAnalyzer.callsSetPage(${pages})" ${nextDis?'disabled':''}>»</button>
+        <button class="btn-page" onclick="window.scrollTo(0,0)" title="Lên đầu">↑</button>
+      `;
+    }
+  }
+
+  function _commBadge(type) {
+    const t = (type || '').toLowerCase();
+    if (t.includes('sms') || t.includes('tin')) return 'cyan';
+    if (t.includes('đi') || t.includes('out')) return 'danger';
+    return '';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 3: IMEI
+  // ══════════════════════════════════════════════════════════
+
+  function _renderImei() {
+    const data    = _S.imeiData;
+    const entries = Object.entries(data);
+    const total   = entries.length;
+    const valid   = entries.filter(([, v]) => v.valid).length;
+    const invalid = total - valid;
+
+    const stats = document.getElementById('imei-stats');
+    if (stats) {
+      stats.innerHTML = `
+        <span class="mini-stat-chip">Tổng IMEI: <strong>${total}</strong></span>
+        <span class="mini-stat-chip" style="color:var(--accent-cyan)">Hợp lệ: <strong>${valid}</strong></span>
+        <span class="mini-stat-chip danger">Không hợp lệ: <strong>${invalid}</strong></span>
+        <button class="btn-page" style="font-size:0.7rem;padding:3px 8px;" onclick="CDRAnalyzer.imeiShowCookieBox()">🍪 Nhập Cookies</button>
+      `;
+    }
+
+    imeiFilter();
+  }
+
+  function imeiFilter() {
+    const search   = (document.getElementById('imei-search')?.value || '').toLowerCase();
+    const validity = document.getElementById('imei-valid-filter')?.value || 'all';
+    const tbody    = document.getElementById('imei-tbody');
+    if (!tbody) return;
+
+    const entries = Object.entries(_S.imeiData)
+      .filter(([imei, v]) => {
+        if (validity === 'valid'   && !v.valid) return false;
+        if (validity === 'invalid' && v.valid)  return false;
+        if (search && !`${imei} ${v.model} ${v.note}`.toLowerCase().includes(search)) return false;
+        return true;
+      })
+      .sort((a, b) => b[1].count - a[1].count);
+
+    tbody.innerHTML = entries.map(([imei, v]) => `
+      <tr>
+        <td style="font-family:var(--font-mono)">${imei}</td>
+        <td style="text-align:center">${v.count}</td>
+        <td style="text-align:center">
+          <span class="badge ${v.valid ? 'cyan' : 'danger'}">${v.valid ? '✓' : '✗'}</span>
+        </td>
+        <td class="editable-cell" contenteditable="true" data-imei="${imei}" data-field="model"
+          onblur="CDRAnalyzer.imeiSaveField(this)"
+          style="font-family:var(--font-mono);font-size:0.78rem">${_esc(v.model)}</td>
+        <td class="editable-cell" contenteditable="true" data-imei="${imei}" data-field="note"
+          onblur="CDRAnalyzer.imeiSaveField(this)">${_esc(v.note)}</td>
+      </tr>
+    `).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Không có dữ liệu</td></tr>`;
+  }
+
+  function imeiSaveField(el) {
+    const imei  = el.dataset.imei;
+    const field = el.dataset.field;
+    if (_S.imeiData[imei]) {
+      _S.imeiData[imei][field] = el.textContent.trim();
+      _saveToStorage();
+    }
+  }
+
+  function imeiClear() {
+    if (!confirm('Xóa dữ liệu IMEI?')) return;
+    _S.imeiData = {};
+    _saveToStorage();
+    _renderImei();
+  }
+
+  function imeiShowCookieBox() {
+    const box = document.getElementById('imei-cookie-box');
+    if (box) box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  function imeiSaveCookie() {
+    const v = document.getElementById('imei-cookie-input')?.value.trim();
+    if (v) {
+      localStorage.setItem('sentinel_imei_cookie', v);
+      _showToast('Đã lưu cookie IMEI', 'ok');
+    }
+  }
+
+  function imeiTestOne() {
+    const imei = Object.keys(_S.imeiData)[0];
+    if (!imei) { _showToast('Không có IMEI để test', 'error'); return; }
+    _showToast(`Test IMEI ${imei} — cần cookies từ imei.info (không thể fetch do CORS)`, 'info');
+  }
+
+  function imeiLookupAll() {
+    _showToast('Tra cứu IMEI cần cookies imei.info — tính năng sẽ sẵn sàng khi có backend proxy', 'info');
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 4: CONTACTS
+  // ══════════════════════════════════════════════════════════
+
+  function _renderContacts() {
+    const entries = Object.entries(_S.contactsData);
+    const stats   = document.getElementById('contacts-stats');
+    if (stats) {
+      const total = entries.length;
+      const interactions = entries.reduce((s, [, v]) => s + v.count, 0);
+      stats.innerHTML = `
+        <span class="mini-stat-chip">Tổng liên lạc: <strong>${total}</strong></span>
+        <span class="mini-stat-chip">Tổng tương tác: <strong>${interactions}</strong></span>
+      `;
+    }
+    contactsFilter();
+  }
+
+  function contactsFilter() {
+    const search   = (document.getElementById('contacts-search')?.value || '').toLowerCase();
+    const dateFrom = document.getElementById('contacts-date-from')?.value || '';
+    const dateTo   = document.getElementById('contacts-date-to')?.value   || '';
+    const tbody    = document.getElementById('contacts-tbody');
+    if (!tbody) return;
+
+    const entries = Object.entries(_S.contactsData)
+      .filter(([phone, v]) => {
+        if (search && !phone.toLowerCase().includes(search)) return false;
+        if (dateFrom && v.lastSeen  && v.lastSeen.slice(0,10)  < dateFrom) return false;
+        if (dateTo   && v.firstSeen && v.firstSeen.slice(0,10) > dateTo)   return false;
+        return true;
+      })
+      .sort((a, b) => b[1].count - a[1].count);
+
+    tbody.innerHTML = entries.map(([phone, v]) => `
+      <tr>
+        <td style="font-family:var(--font-mono);color:var(--accent-cyan)">${phone}</td>
+        <td style="text-align:center;font-weight:bold">${v.count}</td>
+        <td style="text-align:center">${v.out}</td>
+        <td style="text-align:center">${v.in}</td>
+        <td style="text-align:center">${v.sms}</td>
+        <td class="editable-cell" contenteditable="true" data-phone="${phone}" data-field="zalo"
+          onblur="CDRAnalyzer.contactSaveField(this)">${_esc(v.zalo)}</td>
+        <td class="editable-cell" contenteditable="true" data-phone="${phone}" data-field="fb"
+          onblur="CDRAnalyzer.contactSaveField(this)">${_esc(v.fb)}</td>
+        <td class="editable-cell" contenteditable="true" data-phone="${phone}" data-field="tg"
+          onblur="CDRAnalyzer.contactSaveField(this)">${_esc(v.tg)}</td>
+        <td class="editable-cell" contenteditable="true" data-phone="${phone}" data-field="note"
+          onblur="CDRAnalyzer.contactSaveField(this)">${_esc(v.note)}</td>
+      </tr>
+    `).join('') || `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">Không có dữ liệu</td></tr>`;
+  }
+
+  function contactSaveField(el) {
+    const phone = el.dataset.phone;
+    const field = el.dataset.field;
+    if (_S.contactsData[phone]) {
+      _S.contactsData[phone][field] = el.textContent.trim();
+      _saveToStorage();
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 5: TIME ANALYSIS
+  // ══════════════════════════════════════════════════════════
+
+  function _renderTime() {
+    if (typeof Chart === 'undefined') return;
+
+    const hourBuckets    = new Array(24).fill(0);
+    const weekdayBuckets = new Array(7).fill(0);
+    const DANGER_H = new Set([23, 0, 1, 2, 3, 4]);
+
+    _S.records.forEach(r => {
+      if (!r.timestamp) return;
+      // Extract hour
+      const hm = r.timestamp.match(/(\d{1,2}):(\d{2})/);
+      if (hm) hourBuckets[parseInt(hm[1])]++;
+      // Extract weekday
+      let d = null;
+      if (r.timestamp.match(/^\d{4}-\d{2}-\d{2}/)) d = new Date(r.timestamp);
+      else if (r.timestamp.match(/\d{2}\/\d{2}\/\d{4}/)) {
+        const [dd, mm, yyyy] = r.timestamp.split(/[\/ ]/);
+        if (yyyy && mm && dd) d = new Date(`${yyyy}-${mm}-${dd}`);
+      }
+      if (d && !isNaN(d)) weekdayBuckets[d.getDay()]++;
+    });
+
+    // Destroy old charts
+    ['cdr_hourly', 'cdr_weekday'].forEach(k => {
+      if (_S.charts[k]) { try { _S.charts[k].destroy(); } catch (_) {} }
+    });
+
+    const GRID = 'rgba(255,255,255,0.04)';
+    const DAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+    _S.charts.cdr_hourly = new Chart(document.getElementById('cdr-chart-hourly'), {
+      type: 'bar',
+      data: {
+        labels: Array.from({ length: 24 }, (_, i) => i),
+        datasets: [{
+          data: hourBuckets,
+          backgroundColor: hourBuckets.map((_, i) =>
+            DANGER_H.has(i) ? 'rgba(255,59,48,0.55)' : 'rgba(0,240,255,0.22)'
+          ),
+          borderColor: hourBuckets.map((_, i) =>
+            DANGER_H.has(i) ? '#ff3b30' : '#00f0ff'
+          ),
+          borderWidth: 1, borderRadius: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { callback: v => `${v}h` } },
+          y: { grid: { color: GRID }, ticks: { stepSize: 1 }, beginAtZero: true },
+        },
+      },
+    });
+
+    _S.charts.cdr_weekday = new Chart(document.getElementById('cdr-chart-weekday'), {
+      type: 'bar',
+      data: {
+        labels: DAYS,
+        datasets: [{
+          data: weekdayBuckets,
+          backgroundColor: 'rgba(0,240,255,0.22)',
+          borderColor: '#00f0ff',
+          borderWidth: 1, borderRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { grid: { color: GRID }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 6: LOCATION
+  // ══════════════════════════════════════════════════════════
+
+  function _renderLocation() {
+    const entries = Object.entries(_S.locationData);
+    const stats   = document.getElementById('location-stats');
+    if (stats) {
+      const total = entries.length;
+      const bts   = new Set(entries.map(([, v]) => v.bts).filter(Boolean)).size;
+      const inter = entries.reduce((s, [, v]) => s + v.count, 0);
+      stats.innerHTML = `
+        <span class="mini-stat-chip">Tổng vị trí: <strong>${total}</strong></span>
+        <span class="mini-stat-chip">BTS: <strong>${bts}</strong></span>
+        <span class="mini-stat-chip">Tương tác: <strong>${inter}</strong></span>
+      `;
+    }
+    locationFilter();
+  }
+
+  function locationFilter() {
+    const search = (document.getElementById('loc-search')?.value || '').toLowerCase();
+    const tbody  = document.getElementById('location-tbody');
+    if (!tbody) return;
+
+    const entries = Object.entries(_S.locationData)
+      .filter(([key, v]) => {
+        if (!search) return true;
+        return `${v.lac} ${v.cell} ${v.province} ${v.bts}`.toLowerCase().includes(search);
+      })
+      .sort((a, b) => b[1].count - a[1].count);
+
+    tbody.innerHTML = entries.map(([key, v]) => {
+      const mapsUrl = v.gmap || (v.lat && v.lng
+        ? `https://www.google.com/maps?q=${v.lat},${v.lng}`
+        : '');
+      return `
+        <tr>
+          <td style="font-family:var(--font-mono)">${v.lac || ''}</td>
+          <td style="font-family:var(--font-mono)">${v.cell || ''}</td>
+          <td>${_esc(v.province || '')}</td>
+          <td class="editable-cell" contenteditable="true" data-loc="${key}" data-field="bts"
+            onblur="CDRAnalyzer.locationSaveField(this)">${_esc(v.bts)}</td>
+          <td style="text-align:center;font-weight:bold">${v.count}</td>
+          <td>
+            ${mapsUrl
+              ? `<a href="${mapsUrl}" target="_blank" style="color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.72rem;">🗺 Maps</a>`
+              : `<span class="editable-cell" contenteditable="true" data-loc="${key}" data-field="gmap"
+                  onblur="CDRAnalyzer.locationSaveField(this)" style="font-size:0.7rem;color:var(--text-muted)">Nhập link Google Maps</span>`
+            }
+          </td>
+        </tr>
+      `;
+    }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">Không có dữ liệu vị trí</td></tr>`;
+  }
+
+  function locationSaveField(el) {
+    const key   = el.dataset.loc;
+    const field = el.dataset.field;
+    if (_S.locationData[key]) {
+      _S.locationData[key][field] = el.textContent.trim();
+      _saveToStorage();
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 7: IMEI/IMSI HISTORY
+  // ══════════════════════════════════════════════════════════
+
+  function _renderImeiImsi() {
+    const tbody = document.getElementById('imei-imsi-tbody');
+    if (!tbody) return;
+
+    // Build timeline of IMEI changes
+    const timeline = [];
+    let prevImei = null;
+    let prevImsi = null;
+
+    const sorted = [..._S.records].sort((a, b) =>
+      (a.timestamp || '').localeCompare(b.timestamp || '')
+    );
+
+    sorted.forEach(r => {
+      if ((r.imei && r.imei !== prevImei) || (r.imsi && r.imsi !== prevImsi)) {
+        timeline.push({
+          ts:      r.timestamp,
+          imeiOld: prevImei,
+          imeiNew: r.imei,
+          imsi:    r.imsi,
+        });
+        prevImei = r.imei || prevImei;
+        prevImsi = r.imsi || prevImsi;
+      }
+    });
+
+    tbody.innerHTML = timeline.length > 0
+      ? timeline.map(t => `
+          <tr>
+            <td style="font-family:var(--font-mono);font-size:0.78rem">${_esc(t.ts || '')}</td>
+            <td style="font-family:var(--font-mono);color:var(--accent-red)">${_esc(t.imeiOld || '—')}</td>
+            <td style="font-family:var(--font-mono);color:var(--accent-cyan)">${_esc(t.imeiNew || '—')}</td>
+            <td style="font-family:var(--font-mono);font-size:0.72rem">${_esc(t.imsi || '')}</td>
+            <td>${t.imeiOld && t.imeiNew && t.imeiOld !== t.imeiNew ? '⚠ Đổi máy' : ''}</td>
+          </tr>
+        `).join('')
+      : `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Không phát hiện thay đổi IMEI/IMSI</td></tr>`;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 8: MAP
+  // ══════════════════════════════════════════════════════════
+
+  function _bindSimpleDropzone(dzId, fiId, handler) {
+    const dz = document.getElementById(dzId);
+    const fi = document.getElementById(fiId);
+    if (!dz || !fi) return;
+    dz.addEventListener('click', () => fi.click());
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      const f = e.dataTransfer?.files?.[0];
+      if (f) handler(f);
+    });
+    fi.addEventListener('change', () => {
+      const f = fi.files?.[0]; if (f) handler(f);
+      fi.value = '';
+    });
+  }
+
+  async function _handleMapFile(file) {
+    _showToast(`Map file: ${file.name} — dữ liệu lat/lon sẽ được dùng để vẽ bản đồ`, 'info');
+  }
+
+  function mapGenerate() {
+    // Build HTML map from location data using Leaflet
+    const locations = Object.values(_S.locationData)
+      .filter(v => v.lat && v.lng);
+
+    const allLocs = locations.length > 0 ? locations
+      : Object.values(_S.locationData).map((v, i) => ({
+          ...v,
+          lat: 21.02 + (i % 5 - 2) * 0.01,
+          lng: 105.85 + (i % 5 - 2) * 0.015,
+        }));
+
+    if (allLocs.length === 0) {
+      _showToast('Không có dữ liệu vị trí để vẽ bản đồ', 'error');
+      return;
+    }
+
+    const markers = allLocs.slice(0, 500).map(v => `
+      L.circleMarker([${v.lat}, ${v.lng}], {
+        radius: ${Math.min(3 + Math.log2(v.count + 1) * 2, 15)},
+        fillColor: '#00f0ff', color: '#00f0ff',
+        weight: 1, fillOpacity: 0.7
+      }).addTo(map).bindPopup('<b>LAC: ${v.lac}</b><br>Cell: ${v.cell}<br>BTS: ${_jsesc(v.bts)}<br>Tần suất: ${v.count}');
+    `).join('\n');
+
+    const center = allLocs[0];
+    _S.mapHtml = `<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><title>Bản đồ CDR — Sentinel</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>body{margin:0}#map{height:100vh;background:#0b0d11;}</style>
+</head><body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('map').setView([${center.lat}, ${center.lng}], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OpenStreetMap',maxZoom:18
+}).addTo(map);
+${markers}
+</script></body></html>`;
+
+    const preview = document.getElementById('map-preview');
+    if (preview) {
+      preview.innerHTML = `
+        <div style="text-align:center;padding:20px;">
+          <div style="font-size:2rem;margin-bottom:10px;">🗺</div>
+          <div style="color:var(--accent-cyan);font-family:var(--font-mono);">
+            Bản đồ đã được tạo — ${allLocs.slice(0,500).length} điểm
+          </div>
+          <div style="color:var(--text-muted);font-size:0.75rem;margin-top:8px;">
+            Nhấn "Mở" để xem bản đồ tương tác trong tab mới
+          </div>
+        </div>`;
+    }
+    document.getElementById('map-download-btn')?.style && (document.getElementById('map-download-btn').style.display = '');
+    document.getElementById('map-open-btn')?.style && (document.getElementById('map-open-btn').style.display = '');
+    _showToast(`✓ Đã tạo bản đồ với ${allLocs.slice(0,500).length} điểm`, 'ok');
+  }
+
+  function mapDownload() {
+    if (!_S.mapHtml) { _showToast('Chưa tạo bản đồ', 'error'); return; }
+    const phone = _S.subscriber?.phone || 'cdr';
+    CellLacParser.downloadText(_S.mapHtml, `${phone}_map.html`, 'text/html;charset=utf-8');
+  }
+
+  function mapOpen() {
+    if (!_S.mapHtml) { _showToast('Chưa tạo bản đồ', 'error'); return; }
+    const blob = new Blob([_S.mapHtml], { type: 'text/html' });
+    const url  = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // TAB 9: COMPARE
+  // ══════════════════════════════════════════════════════════
+
+  function _bindCompareDropzone() {
+    const dz = document.getElementById('compare-dropzone');
+    const fi = document.getElementById('compare-file-input');
+    if (!dz || !fi) return;
+    dz.addEventListener('click', () => fi.click());
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      _addCompareFiles(Array.from(e.dataTransfer?.files || []));
+    });
+    fi.addEventListener('change', () => {
+      _addCompareFiles(Array.from(fi.files || []));
+      fi.value = '';
+    });
+  }
+
+  async function _addCompareFiles(files) {
+    for (const file of files) {
+      _showToast(`Đang parse: ${file.name}`, 'info');
+      try {
+        const result = await CellLacParser.parseFile(file, 'auto');
+        _S.compareFiles.push({ name: file.name, carrier: result.carrier_name, records: result.records });
+        _renderCompareFilesList();
+      } catch (e) {
+        _showToast(`Lỗi parse ${file.name}: ${e.message}`, 'error');
+      }
+    }
+  }
+
+  function _renderCompareFilesList() {
+    const el = document.getElementById('compare-files-list');
+    if (!el) return;
+    el.innerHTML = _S.compareFiles.map((f, i) => `
+      <div class="mini-stat-chip" style="display:flex;align-items:center;gap:6px;">
+        <span>${f.name} (${f.carrier}, ${f.records.length} rows)</span>
+        <span style="cursor:pointer;color:var(--accent-red);" onclick="CDRAnalyzer.compareRemoveFile(${i})">✕</span>
+      </div>
+    `).join('');
+  }
+
+  function compareRemoveFile(idx) {
+    _S.compareFiles.splice(idx, 1);
+    _renderCompareFilesList();
+  }
+
+  function compareRun() {
+    if (_S.compareFiles.length < 2) {
+      _showToast('Cần ít nhất 2 file để so sánh', 'error'); return;
+    }
+
+    const type = document.getElementById('compare-type')?.value || 'contacts';
+    const thead = document.getElementById('compare-thead');
+    const tbody = document.getElementById('compare-tbody');
+    const summary = document.getElementById('compare-summary');
+    if (!thead || !tbody) return;
+
+    // Build lookup sets per file
+    const sets = _S.compareFiles.map(f => {
+      const set = new Set();
+      f.records.forEach(r => {
+        if (type === 'contacts') { if (r.target) set.add(r.target); }
+        else if (type === 'imei') { if (r.imei) set.add(r.imei); }
+        else {
+          if (r.target) set.add(`contact:${r.target}`);
+          if (r.imei)   set.add(`imei:${r.imei}`);
+        }
+      });
+      return set;
+    });
+
+    // Find common values (in at least 2 files)
+    const allValues = new Set([...sets.flatMap(s => [...s])]);
+    const common = [...allValues].filter(v =>
+      sets.filter(s => s.has(v)).length >= 2
+    );
+    _S.compareResult = common;
+
+    thead.innerHTML = `<th>Giá trị</th>${_S.compareFiles.map(f => `<th>${f.name}</th>`).join('')}`;
+    tbody.innerHTML = common.length > 0
+      ? common.map(v => `
+          <tr>
+            <td style="font-family:var(--font-mono)">${v}</td>
+            ${sets.map(s => `<td style="text-align:center">${s.has(v) ? '✓' : '—'}</td>`).join('')}
+          </tr>
+        `).join('')
+      : `<tr><td colspan="${_S.compareFiles.length + 1}" style="text-align:center;color:var(--text-muted);padding:20px;">Không tìm thấy dữ liệu chung</td></tr>`;
+
+    if (summary) summary.textContent = `Tìm thấy ${common.length} ${type === 'contacts' ? 'số liên lạc' : type === 'imei' ? 'IMEI' : 'mục'} chung giữa ${_S.compareFiles.length} files`;
+    document.getElementById('compare-export-btn')?.style && (document.getElementById('compare-export-btn').style.display = '');
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // EXPORT
+  // ══════════════════════════════════════════════════════════
+
+  function exportTab(tabName) {
+    if (!_S.records.length) { _showToast('Không có dữ liệu', 'error'); return; }
+    const wb   = XLSX.utils.book_new();
+    const phone = _S.subscriber?.phone || 'cdr';
+
+    switch (tabName) {
+      case 'calls': {
+        const data = _S.callsFiltered.length ? _S.callsFiltered : _S.records;
+        _appendSheetXlsx(wb, _recordsToRows(data), 'Lịch sử cuộc gọi');
+        break;
+      }
+      case 'imei': {
+        const rows = Object.entries(_S.imeiData).map(([imei, v]) => ({
+          'IMEI': imei, 'Tần suất': v.count,
+          'Hợp lệ': v.valid ? 'Có' : 'Không', 'Model': v.model, 'Ghi chú': v.note,
+        }));
+        _appendSheetXlsx(wb, rows, 'IMEI');
+        break;
+      }
+      case 'contacts': {
+        const rows = Object.entries(_S.contactsData)
+          .sort((a, b) => b[1].count - a[1].count)
+          .map(([phone, v]) => ({
+            'Số điện thoại': phone, 'Tần suất': v.count,
+            'Gọi đi': v.out, 'Gọi đến': v.in, 'SMS': v.sms,
+            'Zalo': v.zalo, 'Facebook': v.fb, 'Telegram': v.tg, 'Ghi chú': v.note,
+          }));
+        _appendSheetXlsx(wb, rows, 'Số liên lạc');
+        break;
+      }
+      case 'location': {
+        const rows = Object.values(_S.locationData)
+          .sort((a, b) => b.count - a.count)
+          .map(v => ({
+            'LAC': v.lac, 'Cell ID': v.cell, 'Tỉnh': v.province,
+            'Tên trạm BTS': v.bts, 'Tần suất': v.count, 'Google Maps': v.gmap,
+          }));
+        _appendSheetXlsx(wb, rows, 'Vị trí');
+        break;
+      }
+      case 'compare': {
+        const rows = _S.compareResult.map(v => ({ 'Giá trị chung': v }));
+        _appendSheetXlsx(wb, rows, 'So sánh');
+        break;
+      }
+    }
+
+    XLSX.writeFile(wb, `${phone}_${tabName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    _showToast(`✓ Đã xuất ${tabName} Excel`, 'ok');
+  }
+
+  function exportAll() {
+    if (!_S.records.length) { _showToast('Không có dữ liệu', 'error'); return; }
+    const result = _S.parseResult || { carrier_name: 'CDR', pii: {} };
+    // Use CellLacParser's multi-sheet export if available
+    try {
+      CellLacParser.downloadExcel({ ...result, records: _S.records, pii: _S.subscriber });
+      _showToast('✓ Đã xuất file Excel đầy đủ', 'ok');
+    } catch (e) {
+      _showToast(`Lỗi export: ${e.message}`, 'error');
+    }
+  }
+
+  async function downloadZip() {
+    if (!_S.records.length) { _showToast('Không có dữ liệu', 'error'); return; }
+    if (typeof JSZip === 'undefined') { exportAll(); return; }
+
+    const phone = _S.subscriber?.phone || 'cdr';
+    const zip   = new JSZip();
+
+    // Excel full
+    const wb = _S.parseResult
+      ? CellLacParser.exportToExcel({ ..._S.parseResult, records: _S.records })
+      : XLSX.utils.book_new();
+    zip.file(`${phone}_export_all.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+
+    // CSV
+    zip.file(`${phone}_CDR.csv`, '﻿' + CellLacParser.exportCSV(_S.records));
+    // JSON
+    zip.file(`${phone}_CDR.json`, CellLacParser.exportJSON(_S.records));
+    // Map
+    if (_S.mapHtml) zip.file(`${phone}_map.html`, _S.mapHtml);
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href: url, download: `cdr_bundle_${new Date().toISOString().slice(0,10)}.zip`
+    });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    _showToast(`✓ ZIP bundle (${(blob.size/1024).toFixed(0)} KB)`, 'ok');
+  }
+
+  function _appendSheetXlsx(wb, jsonRows, sheetName) {
+    const ws = jsonRows?.length
+      ? XLSX.utils.json_to_sheet(jsonRows)
+      : XLSX.utils.aoa_to_sheet([['Không có dữ liệu']]);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  }
+
+  function _recordsToRows(records) {
+    return records.map(r => ({
+      'Số chủ':     r.subscriber || r.source || '',
+      'Số liên hệ': r.target    || '',
+      'Thời gian':  r.timestamp || '',
+      'Thời lượng': r.duration  || '',
+      'IMEI':       r.imei      || '',
+      'Tỉnh':       r.province  || '',
+      'Loại':       r.comm_type || '',
+      'Hướng':      r.direction || '',
+      'Địa chỉ BTS':r.bts_name  || '',
+      'LAC':        r.lac       || '',
+      'Cell ID':    r.cell_id   || '',
+    }));
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // UI HELPERS
+  // ══════════════════════════════════════════════════════════
+
+  function _setStatus(msg, type) {
+    const chip = document.getElementById('cdr-status-chip');
+    if (!chip) return;
+    chip.style.display = '';
+    const colors = {
+      ok:    { border: 'var(--accent-cyan)',   color: 'var(--accent-cyan)',  bg: 'rgba(0,240,255,0.08)' },
+      error: { border: 'var(--accent-red)',    color: 'var(--accent-red)',   bg: 'rgba(255,59,48,0.08)' },
+      info:  { border: 'var(--border-color)',  color: 'var(--text-secondary)', bg: 'rgba(18,22,30,0.9)' },
+    };
+    const c = colors[type] || colors.info;
+    Object.assign(chip.style, { border: `1px solid ${c.border}`, color: c.color, background: c.bg });
+    chip.textContent = msg;
+  }
+
+  function _showToast(msg, type) {
+    if (typeof _showToast !== 'undefined' && window._showToastGlobal) {
+      window._showToastGlobal(msg, type === 'ok' ? 'success' : type);
+      return;
+    }
+    // Fallback: use Sentinel's _showToast from app.js
+    if (typeof window._sentinelToast === 'function') {
+      window._sentinelToast(msg, type);
+    } else {
+      console.log(`[CDR Toast] ${type}: ${msg}`);
+    }
+  }
+
+  function _esc(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function _jsesc(str) {
+    return String(str || '').replace(/'/g, "\\'").replace(/\n/g, ' ');
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // PUBLIC API
+  // ══════════════════════════════════════════════════════════
+
+  return {
+    init,
+    clearAll,
+    // Tab 1
+    subscriberEdit, subscriberSave, subscriberCancel, subscriberReset, selectSubscriber,
+    // Tab 2
+    callsFilter, callsSetPage,
+    // Tab 3
+    imeiFilter, imeiSaveField, imeiClear, imeiShowCookieBox, imeiSaveCookie, imeiTestOne, imeiLookupAll,
+    // Tab 4
+    contactsFilter, contactSaveField,
+    // Tab 5 — auto-rendered
+    // Tab 6
+    locationFilter, locationSaveField,
+    // Tab 7 — auto-rendered
+    // Tab 8
+    mapGenerate, mapDownload, mapOpen,
+    // Tab 9
+    compareRemoveFile, compareRun,
+    // Export
+    exportTab, exportAll, downloadZip,
+  };
+})();

@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel Core | Precision Data & Analytics System</title>
+  <!-- SEO & Optimization Tags -->
+  <meta name="description" content="Sentinel Data Analytics Platform for precision telemetry, geospatial processing, and financial ledger audit.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Navigation Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon"></div>
+      <h1 class="brand-title">SENTINEL</h1>
+    </div>
+    
+    <ul class="nav-list">
+      <li class="nav-item active" data-screen="home">
+        <i>◳</i> <span>Bảng Điều Khiển</span>
+      </li>
+      <li class="nav-item" data-screen="gtp">
+        <i>🧭</i> <span>Hệ Không Gian GTP</span>
+      </li>
+      <li class="nav-item" data-screen="fla">
+        <i>☍</i> <span>Đối Soát Luồng FLA</span>
+      </li>
+      <li class="nav-item" data-screen="srau">
+        <i>📡</i> <span>Kiểm Toán Điểm Cuối</span>
+      </li>
+      <li class="nav-item" data-screen="cdr" style="margin-top:12px;border-top:1px solid var(--border-color);padding-top:12px;">
+        <i>📊</i> <span>CDR Analyzer</span>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <div>BUILD: 4.2.1-SECURE</div>
+      <div style="font-size: 0.65rem; color: var(--accent-cyan); margin-top: 4px;">ENCRYPTED SESSION</div>
+    </div>
+  </aside>
+
+  <!-- Main Viewport -->
+  <main class="main-viewport">
+    
+    <!-- Top Nav-Bar -->
+    <header class="top-bar">
+      <div class="page-title-section">
+        <h2 id="page-display-title">BẢNG ĐIỀU KHIỂN CHUNG</h2>
+      </div>
+      
+      <div class="system-status-indicator">
+        <button class="btn-ws" id="btn-focus-toggle" title="Chế độ tập trung toàn màn hình">⛶ FOCUS</button>
+        <button class="btn-ws" id="btn-notes-toggle" title="Ghi chú điều tra">✎ GHI CHÚ</button>
+        <div class="processing-indicator" id="processing-indicator">
+          <div class="processing-dot"></div>
+          <span>ĐANG XỬ LÝ</span>
+        </div>
+        <span id="live-clock">UTC+7 [ --/--/---- - --:--:-- ]</span>
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span>BẢO MẬT</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Screens Container -->
+    <section class="screen-container">
+      
+      <!-- SCREEN 1: Dashboard Home -->
+      <div class="screen active" id="home-screen">
+        <div style="margin-bottom: 30px;">
+          <h3 style="font-family: var(--font-heading); font-size: 1.8rem; font-weight: 600; margin-bottom: 8px;">Hệ Thống Phân Tích Kỹ Thuật Aegis</h3>
+          <p style="color: var(--text-secondary); font-size: 0.95rem;">Chào mừng quay trở lại. Hãy lựa chọn phân hệ tác nghiệp chuyên dụng để bắt đầu xử lý.</p>
+        </div>
+
+        <!-- Pinned analytics chips -->
+        <div id="pinned-section">
+          <div class="pinned-label">📌 PHÂN HỆ ĐÃ GHIM</div>
+          <div class="pinned-cards-row" id="pinned-cards-row"></div>
+        </div>
+
+        <div class="dashboard-grid">
+          <!-- Card 1: GTP -->
+          <div class="tactical-card">
+            <div class="card-status-bar">
+              <span class="status-dot" style="background-color: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan);"></span>
+              <span class="module-code">GTP-SYSTEM</span>
+              <button class="pin-btn" data-pin="gtp" data-label="GTP Telemetry" title="Ghim phân hệ">📌</button>
+            </div>
+            <div>
+              <h4 class="card-title">Hệ Không Gian Telemetry</h4>
+              <p class="card-desc">Xử lý phân rã tọa độ trạm thu phát viễn thông vùng (Cell-LAC), ánh xạ lộ trình di chuyển của nút thiết bị mục tiêu trên bản đồ số học.</p>
+            </div>
+            <button class="btn-tactical" id="btn-gtp-init">KHỞI CHẠY KHÔNG GIAN</button>
+          </div>
+
+          <!-- Card 2: FLA -->
+          <div class="tactical-card">
+            <div class="card-status-bar">
+              <span class="status-dot" style="background-color: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan);"></span>
+              <span class="module-code">FLA-LEDGER</span>
+              <button class="pin-btn" data-pin="fla" data-label="FLA Ledger" title="Ghim phân hệ">📌</button>
+            </div>
+            <div>
+              <h4 class="card-title">Đối Soát Luồng Tài Chính</h4>
+              <p class="card-desc">Trình bóc tách, chuẩn hóa sao kê tài chính ngân hàng. Tự động khoanh vùng giao dịch lớn bất thường, truy quét tần suất và vẽ sơ đồ dòng tiền.</p>
+            </div>
+            <button class="btn-tactical" id="btn-fla-init">KHỞI CHẠY ĐỐI SOÁT</button>
+          </div>
+
+          <!-- Card 3: SRAU -->
+          <div class="tactical-card warning-state">
+            <div class="card-status-bar">
+              <span class="status-dot" style="background-color: var(--accent-red); box-shadow: 0 0 8px var(--accent-red);"></span>
+              <span class="module-code">SRAU-BEACON</span>
+              <button class="pin-btn" data-pin="srau" data-label="SRAU Audit" title="Ghim phân hệ">📌</button>
+            </div>
+            <div>
+              <h4 class="card-title">Kiểm Toán Điểm Cuối</h4>
+              <p class="card-desc">Khởi tạo các liên kết định hướng bảo mật kiểm thử (IP beacon) phục vụ ghi nhận thông số đường truyền, IP thiết bị truy cập và phân tích ISP.</p>
+            </div>
+            <button class="btn-tactical" id="btn-srau-init">THIẾT LẬP BEACON</button>
+          </div>
+        </div>
+
+        <div class="design-watermark">
+          <i>⚙</i> ICAM PRECISION DESIGN COMPLIANT
+        </div>
+      </div>
+
+      <!-- SCREEN 2: GTP (Cell-LAC Map) -->
+      <div class="screen" id="gtp-screen">
+        <div class="panel-layout">
+          <!-- Control Column Left -->
+          <div class="control-panel" id="gtp-control-panel">
+            <button class="collapse-toggle-btn" id="gtp-collapse-btn">◀ THU</button>
+            <div class="panel-block">
+              <div class="panel-block-title"><i>🧭</i> NẠP TỆP CDR / CELL-LAC</div>
+
+              <!-- Carrier Select -->
+              <div class="form-group">
+                <span class="form-label">Nhà mạng</span>
+                <select class="form-input" id="gtp-carrier-select" style="background-color: #0c0e12;">
+                  <option value="auto">🔍 Tự động nhận diện</option>
+                  <option value="viettel">🔴 Viettel VTL</option>
+                  <option value="vinaphone">🔵 Vinaphone VNP</option>
+                  <option value="mobiphone">🟡 Mobiphone MBF</option>
+                </select>
+              </div>
+
+              <!-- Dropzone -->
+              <div class="form-group">
+                <span class="form-label">Tệp CDR (XLSX, XLS, CSV)</span>
+                <div class="dropzone" id="gtp-dropzone">
+                  <input type="file" id="gtp-file-input" accept=".xlsx,.xls,.csv" style="display:none;">
+                  <div class="dropzone-icon" id="gtp-dropzone-icon">⤓</div>
+                  <div class="dropzone-text" id="gtp-dropzone-text">Kéo thả hoặc nhấn để chọn tệp</div>
+                  <div style="font-size:0.65rem;color:var(--text-muted);">XLSX · XLS · CSV · Viettel · Vinaphone · Mobifone</div>
+                </div>
+              </div>
+
+              <!-- Upload Status Panel (ẩn mặc định) -->
+              <div id="gtp-upload-status" style="display:none; margin-top:10px;">
+                <div id="gtp-status-bar" style="
+                  padding: 8px 10px;
+                  border-radius: 4px;
+                  font-family: var(--font-mono);
+                  font-size: 0.72rem;
+                  line-height: 1.6;
+                  border: 1px solid var(--border-color);
+                  background: rgba(0,240,255,0.04);
+                "></div>
+                <!-- Thống kê nhanh -->
+                <div id="gtp-parse-stats" style="
+                  display: grid;
+                  grid-template-columns: 1fr 1fr 1fr;
+                  gap: 5px;
+                  margin-top: 8px;
+                " hidden>
+                  <div class="mini-stat-card" style="padding:6px;">
+                    <span class="mini-stat-label" style="font-size:0.6rem;">Tổng dòng</span>
+                    <span class="mini-stat-value cyan" id="gtp-stat-total" style="font-size:0.9rem;">0</span>
+                  </div>
+                  <div class="mini-stat-card" style="padding:6px;">
+                    <span class="mini-stat-label" style="font-size:0.6rem;">Hợp lệ</span>
+                    <span class="mini-stat-value" style="font-size:0.9rem;color:var(--accent-cyan);" id="gtp-stat-valid">0</span>
+                  </div>
+                  <div class="mini-stat-card" style="padding:6px;">
+                    <span class="mini-stat-label" style="font-size:0.6rem;">Lỗi dòng</span>
+                    <span class="mini-stat-value danger" style="font-size:0.9rem;" id="gtp-stat-errors">0</span>
+                  </div>
+                </div>
+                <!-- Cảnh báo cột thiếu -->
+                <div id="gtp-col-warnings" style="display:none; margin-top:6px;
+                  font-family:var(--font-mono); font-size:0.68rem;
+                  color:var(--accent-yellow); line-height:1.5;
+                  padding:6px 8px; border:1px solid rgba(255,204,0,0.3);
+                  border-radius:3px; background:rgba(255,204,0,0.05);">
+                </div>
+                <!-- Vinaphone subscriber filter (chỉ hiển thị với Vinaphone) -->
+                <div id="gtp-subscriber-filter" style="display:none; margin-top:8px;">
+                  <span class="form-label" style="color:var(--accent-cyan);font-size:0.68rem;">
+                    👤 THUÊ BAO (Vinaphone multi-subscriber)
+                  </span>
+                  <select class="form-input" id="gtp-subscriber-select"
+                    style="background-color:#0c0e12;font-size:0.78rem;margin-top:4px;"
+                    onchange="gtpFilterBySubscriber(this.value)">
+                    <option value="all">Tất cả thuê bao</option>
+                  </select>
+                  <div id="gtp-subscriber-count" style="
+                    font-family:var(--font-mono);font-size:0.65rem;
+                    color:var(--text-muted);margin-top:3px;
+                  "></div>
+                </div>
+
+                <!-- Nút export -->
+                <div id="gtp-export-btns" style="display:none; gap:6px; margin-top:8px; flex-wrap:wrap;">
+                  <button class="btn-page btn-export" onclick="gtpExportCSV()" style="flex:1;min-width:70px;">⬇ CSV</button>
+                  <button class="btn-page btn-export" onclick="gtpExportJSON()" style="flex:1;min-width:70px;">⬇ JSON</button>
+                  <button class="btn-page btn-export" onclick="gtpDownloadExcel()"
+                    style="flex:1;min-width:120px;background:rgba(0,240,255,0.12);border-color:var(--accent-cyan);color:var(--accent-cyan);">
+                    ⬇ EXCEL (full)
+                  </button>
+                  <button class="btn-page btn-export" onclick="gtpDownloadZip()"
+                    id="gtp-zip-btn"
+                    style="flex:1;min-width:120px;background:rgba(255,204,0,0.1);border-color:var(--accent-yellow);color:var(--accent-yellow);">
+                    ⬇ ZIP bundle
+                  </button>
+                </div>
+              </div>
+
+              <button class="btn-secondary" id="gtp-load-demo" style="margin-top: 10px;">NẠP BẢN GHI DEMO HANOI</button>
+
+              <!-- GTP Filters: visible after data loads -->
+              <div id="gtp-filter-block" style="display:none; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                <span class="form-label" style="display:block; margin-bottom: 10px;">⚙ BỘ LỌC &amp; TÌM KIẾM</span>
+                <div class="form-group">
+                  <input type="text" class="form-input filter-input" id="gtp-search" placeholder="Tìm trạm, Cell ID, vị trí...">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <span class="form-label">Vùng LAC</span>
+                    <select class="form-input" id="gtp-filter-lac" style="background-color: #0c0e12; font-size: 0.78rem;">
+                      <option value="all">Tất cả</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <span class="form-label">Tín Hiệu</span>
+                    <select class="form-input" id="gtp-filter-signal" style="background-color: #0c0e12; font-size: 0.78rem;">
+                      <option value="all">Tất cả</option>
+                      <option value="good">Tốt (≥-75)</option>
+                      <option value="medium">TB (-75~-90)</option>
+                      <option value="weak">Yếu (&lt;-90)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-block" style="flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto;">
+              <div class="panel-block-title"><i>🎚</i> BẢN TIN LỊCH TRÌNH DI CHUYỂN</div>
+              <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5;">Sử dụng thanh trượt dòng thời gian bên dưới để phát lại từng bước nhảy trạm của mục tiêu định vị.</p>
+
+              <div class="timeline-controller">
+                <input type="range" class="timeline-slider" id="gtp-timeline-slider" min="0" max="0" value="0" disabled>
+              </div>
+              <div class="timeline-info" id="gtp-timeline-info" style="margin-top: 10px; font-weight: bold;">-- CHƯA CÓ DỮ LIỆU --</div>
+
+              <!-- GTP Analytics Charts -->
+              <div id="gtp-charts" style="display: none; flex-direction: column; gap: 10px; margin-top: 16px;">
+                <div class="chart-mini-box">
+                  <div class="chart-mini-label">Cường Độ Tín Hiệu Theo Thời Gian (dBm)</div>
+                  <div class="chart-canvas-wrap">
+                    <canvas id="chart-signal"></canvas>
+                  </div>
+                </div>
+                <div class="chart-mini-box">
+                  <div class="chart-mini-label">Tần Suất Hoạt Động Theo Vùng LAC</div>
+                  <div class="chart-canvas-wrap">
+                    <canvas id="chart-lac"></canvas>
+                  </div>
+                </div>
+                <div class="chart-mini-box">
+                  <div class="chart-mini-label">Lịch Trình Di Chuyển — Khoảng Cách Tích Lũy</div>
+                  <div class="chart-canvas-wrap">
+                    <canvas id="chart-movement"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="resize-handle" id="gtp-resize-handle"></div>
+          <!-- Display Column Right -->
+          <div class="display-panel">
+            <div class="panel-block-title" style="margin-bottom: 15px;"><i>🖾</i> BẢN ĐỒ RADAR KHÔNG GIAN SÓNG (HANOI DENSE URBAN)</div>
+            <div class="radar-grid-container">
+              <svg class="radar-map-svg" id="gtp-radar-svg">
+                <!-- Inner items will be dynamically drawn by JS -->
+              </svg>
+            </div>
+
+            <div class="table-wrapper vt-wrapper" id="gtp-table-wrapper" style="margin-top: 15px;">
+              <table class="tactical-table">
+                <thead>
+                  <tr>
+                    <th class="sortable-th" data-sort-key="time">Thời Gian <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="lac">LAC <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="cell">Cell ID <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="label">Vị Trí <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="strength">Tín Hiệu <span class="sort-arrow"></span></th>
+                  </tr>
+                </thead>
+                <tbody id="gtp-detail-body">
+                  <tr>
+                    <td colspan="5" style="text-align: center; color: var(--text-muted); font-family: var(--font-mono); padding: 30px;">HỆ THỐNG TRỐNG - VUI LÒNG NẠP BẢN GHI ĐỂ PHÂN TÍCH</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="gtp-pagination" class="pagination-bar" style="display:none;">
+              <button class="btn-page" id="gtp-prev" disabled>◀</button>
+              <span class="page-info" id="gtp-page-info">1 / 1</span>
+              <button class="btn-page" id="gtp-next" disabled>▶</button>
+              <span class="page-count" id="gtp-record-count"></span>
+              <button class="btn-page btn-export" onclick="exportGtpXlsx()" title="Xuất dữ liệu đang lọc ra file Excel">⬇ XLSX</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN 3: FLA (Bank Statement Analyzer) -->
+      <div class="screen" id="fla-screen">
+        <div class="panel-layout">
+          <!-- Control Column Left -->
+          <div class="control-panel" id="fla-control-panel">
+            <button class="collapse-toggle-btn" id="fla-collapse-btn">◀ THU</button>
+            <div class="panel-block">
+              <div class="panel-block-title"><i>☍</i> NẠP DỮ LIỆU SAO KÊ</div>
+              <div class="form-group">
+                <span class="form-label">Chọn định dạng ngân hàng</span>
+                <select class="form-input" style="background-color: #0c0e12;">
+                  <option>Techcombank (Định dạng chuẩn)</option>
+                  <option>Vietcombank (Excel sao kê)</option>
+                  <option>Vietinbank (CSV đối soát)</option>
+                  <option>Định dạng cột đa dụng (Tùy biến)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <span class="form-label">Tệp sao kê tài chính</span>
+                <div class="dropzone" id="fla-dropzone">
+                  <input type="file" id="fla-file-input" accept=".xlsx,.xls,.csv" style="display:none;">
+                  <div class="dropzone-icon">⤓</div>
+                  <div class="dropzone-text">Kéo thả hoặc nhấn để chọn tệp sao kê</div>
+                  <div style="font-size: 0.65rem; color: var(--text-muted);">Chấp nhận tệp .XLSX, .XLS, .CSV</div>
+                </div>
+              </div>
+
+              <button class="btn-secondary" id="fla-load-demo" style="margin-top: 10px;">NẠP SAO KÊ THỬ NGHIỆM</button>
+            </div>
+
+            <div class="panel-block" style="flex-grow: 1;">
+              <div class="panel-block-title"><i>⚙</i> BỘ LỌC THUẬT TOÁN</div>
+              <div class="form-group">
+                <span class="form-label">Phân loại dữ liệu quét</span>
+                <select class="form-input" id="fla-filter-select" style="background-color: #0c0e12;" disabled>
+                  <option value="all">Tất cả giao dịch</option>
+                  <option value="anomaly">Giao dịch có dấu hiệu bất thường (Anomalies)</option>
+                  <option value="large">Giao dịch giá trị lớn (> 150Tr)</option>
+                </select>
+              </div>
+              <!-- Advanced filters: shown after data loads -->
+              <div id="fla-adv-filters" style="display:none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+                <div class="form-group">
+                  <span class="form-label">Tìm kiếm nội dung</span>
+                  <input type="text" class="form-input filter-input" id="fla-search" placeholder="Tìm nội dung, ngân hàng, mã lệnh...">
+                </div>
+                <div class="form-group">
+                  <span class="form-label">Ngân Hàng</span>
+                  <select class="form-input" id="fla-filter-bank" style="background-color: #0c0e12; font-size: 0.8rem;">
+                    <option value="all">Tất cả ngân hàng</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <span class="form-label">Giá Trị (Triệu VND)</span>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <input type="number" class="form-input filter-input" id="fla-amount-min" placeholder="Từ (tr)" min="0">
+                    <input type="number" class="form-input filter-input" id="fla-amount-max" placeholder="Đến (tr)" min="0">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <span class="form-label">Khung Giờ (0–23h)</span>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <input type="number" class="form-input filter-input" id="fla-hour-from" placeholder="Từ giờ" min="0" max="23">
+                    <input type="number" class="form-input filter-input" id="fla-hour-to" placeholder="Đến giờ" min="0" max="23">
+                  </div>
+                </div>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; margin-top: 15px;">
+                * Thuật toán tự động đánh dấu các chuyển khoản diễn ra từ 23h đến 4h sáng, các khoản dồn dập có cùng số tiền lẻ (tần suất rửa tiền) và các giao dịch giá trị cực lớn đột biến không có nội dung rõ ràng.
+              </div>
+            </div>
+          </div>
+
+          <div class="resize-handle" id="fla-resize-handle"></div>
+          <!-- Display Column Right -->
+          <div class="display-panel">
+            <div class="panel-block-title" style="margin-bottom: 10px;"><i>🗠</i> BẢNG ĐỐI SOÁT LUỒNG TÀI CHÍNH MỤC TIÊU</div>
+            
+            <div class="ledger-stat-row">
+              <div class="mini-stat-card">
+                <span class="mini-stat-label">Tổng khối lượng quét</span>
+                <span class="mini-stat-value cyan" id="stat-total-flow">-- gd</span>
+              </div>
+              <div class="mini-stat-card">
+                <span class="mini-stat-label">Tổng giá trị dòng tiền</span>
+                <span class="mini-stat-value" id="stat-total-inflow">-- đ</span>
+              </div>
+              <div class="mini-stat-card">
+                <span class="mini-stat-label">Cảnh báo bất thường</span>
+                <span class="mini-stat-value danger" id="stat-total-anomaly">-- gd</span>
+              </div>
+            </div>
+
+            <!-- FLA Analytics Charts -->
+            <div id="fla-charts" style="display: none; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; flex-shrink: 0;">
+              <div class="chart-mini-box">
+                <div class="chart-mini-label">Phân Bố Giao Dịch Theo Giờ (0–23h)</div>
+                <div class="chart-canvas-wrap">
+                  <canvas id="chart-hourly"></canvas>
+                </div>
+              </div>
+              <div class="chart-mini-box">
+                <div class="chart-mini-label">Khối Lượng Giao Dịch (Triệu VND)</div>
+                <div class="chart-canvas-wrap">
+                  <canvas id="chart-amounts"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-wrapper vt-wrapper" id="fla-table-wrapper">
+              <table class="tactical-table">
+                <thead>
+                  <tr>
+                    <th class="sortable-th" data-sort-key="date">Ngày/Giờ <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="bank">Ngân Hàng <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="amount">Số Tiền (VND) <span class="sort-arrow"></span></th>
+                    <th class="sortable-th" data-sort-key="code">Mã Lệnh <span class="sort-arrow"></span></th>
+                    <th>Nội Dung Giao Dịch</th>
+                    <th class="sortable-th" data-sort-key="flag">Cảnh Báo <span class="sort-arrow"></span></th>
+                  </tr>
+                </thead>
+                <tbody id="fla-flow-body">
+                  <tr>
+                    <td colspan="6" style="text-align: center; color: var(--text-muted); font-family: var(--font-mono); padding: 50px;">CHƯA CÓ BẢN GHI SAO KÊ - NHẤN NẠP SAO KÊ ĐỂ QUÉT PHÂN TÍCH</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="fla-pagination" class="pagination-bar" style="display:none;">
+              <button class="btn-page" id="fla-prev" disabled>◀</button>
+              <span class="page-info" id="fla-page-info">1 / 1</span>
+              <button class="btn-page" id="fla-next" disabled>▶</button>
+              <span class="page-count" id="fla-record-count"></span>
+              <button class="btn-page btn-export" onclick="exportFlaXlsx()" title="Xuất dữ liệu đang lọc ra file Excel">⬇ XLSX</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN 4: SRAU (Endpoint Telemetry Tracking Beacon) -->
+      <div class="screen" id="srau-screen">
+        <div class="panel-layout">
+          <!-- Control Column Left -->
+          <div class="control-panel">
+            <div class="panel-block">
+              <div class="panel-block-title"><i>📡</i> CẤU HÌNH BEACON KÊNH TRUYỀN</div>
+              
+              <div class="form-group">
+                <span class="form-label">Chọn liên kết ngụy trang (Decoy URL)</span>
+                <select class="form-input" id="srau-input-decoy" style="background-color: #0c0e12;">
+                  <option value="https://news.chinhphu.vn">Cổng TTĐT Chính Phủ (Mặc định)</option>
+                  <option value="https://vietnamnet.vn">Trang tin điện tử VietnamNet</option>
+                  <option value="https://drive.google.com/file/d/sample">Tài liệu chia sẻ PDF trực tuyến</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <span class="form-label">Loại máy chủ định tuyến</span>
+                <select class="form-input" style="background-color: #0c0e12;">
+                  <option>Máy chủ CDN Phân phối Tĩnh (Ẩn danh)</option>
+                  <option>Đường truyền Lab ảo lập vùng cô lập</option>
+                </select>
+              </div>
+
+              <button class="btn-tactical btn-warning" id="srau-btn-generate" style="margin-top: 10px;">KHỞI TẠO LIÊN KẾT AN TOÀN</button>
+            </div>
+
+            <!-- Beacon Link Display Result (Hidden initially) -->
+            <div class="beacon-result-box" id="srau-result-box" style="display: none;">
+              <span class="form-label" style="color: var(--accent-cyan);">LIÊN KẾT BEACON ĐÃ TẠO</span>
+              <div class="beacon-link-display">
+                <div class="beacon-url-text" id="srau-url-display">https://secureservers-cdn.net/auth/...</div>
+                <button class="btn-icon" id="srau-btn-copy" title="Sao chép đường dẫn">📋</button>
+              </div>
+              <p style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 10px; line-height: 1.4;">
+                * Liên kết ngụy trang tự động định cấu hình chuyển hướng an toàn và trích xuất dữ liệu định danh khi đối tượng nhấp vào liên kết.
+              </p>
+            </div>
+          </div>
+
+          <!-- Display Column Right -->
+          <div class="display-panel" style="background-color: #05070a;">
+            <div class="panel-block-title" style="margin-bottom: 10px; justify-content: space-between; display: flex; width: 100%;">
+              <span><i>💻</i> NHẬT KÝ KIỂM TOÁN LƯU LƯỢNG ĐIỂM CUỐI THỜI GIAN THỰC</span>
+              <span style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted);">LOGS STREAM ACTIVE</span>
+            </div>
+
+            <div class="ledger-stat-row" style="margin-bottom: 20px;">
+              <div class="mini-stat-card">
+                <span class="mini-stat-label">Số lượt truy cập</span>
+                <span class="mini-stat-value cyan" id="srau-stat-visits">0</span>
+              </div>
+              <div class="mini-stat-card">
+                <span class="mini-stat-label">Đường truyền kích hoạt</span>
+                <span class="mini-stat-value" id="srau-stat-active">0</span>
+              </div>
+              <div class="mini-stat-card">
+                <span class="mini-stat-label">Kết nối lỗi</span>
+                <span class="mini-stat-value" id="srau-stat-failed">0</span>
+              </div>
+            </div>
+
+            <!-- Console Log Stream Panel -->
+            <div style="flex-grow: 1; border: 1px solid var(--border-color); border-radius: 4px; padding: 20px; background: #000; overflow-y: auto;">
+              <ul class="console-logs-list" id="srau-console-logs">
+                <li class="console-log-item" style="color: var(--text-muted)">[SYSTEM] Bàn điều khiển kiểm toán rỗng. Chờ kích hoạt beacon kênh truyền để ghi nhận dữ liệu...</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN 5: CDR Analyzer -->
+      <div class="screen" id="cdr-screen">
+
+        <!-- ── Top Upload Bar ─────────────────────────────────── -->
+        <div class="cdr-upload-bar" id="cdr-upload-bar">
+          <div class="cdr-upload-inner">
+            <!-- Carrier Select -->
+            <div class="cdr-field">
+              <span class="form-label" style="font-size:0.7rem;">Nhà mạng</span>
+              <select class="form-input cdr-select" id="cdr-carrier-select" style="min-width:160px;">
+                <option value="auto">🔍 Auto Detect</option>
+                <option value="viettel">🔴 VIETTEL</option>
+                <option value="vinaphone">🔵 VINA</option>
+                <option value="mobiphone">🟡 MOBI</option>
+              </select>
+            </div>
+            <!-- Dropzone compact -->
+            <div class="cdr-dropzone" id="cdr-dropzone" title="Kéo thả hoặc click để chọn file">
+              <input type="file" id="cdr-file-input" accept=".xlsx,.xls" style="display:none;">
+              <span id="cdr-dz-icon">⤓</span>
+              <span id="cdr-dz-text">Kéo thả hoặc chọn file CDR (XLSX / XLS)</span>
+            </div>
+            <!-- Status chip -->
+            <div class="cdr-status-chip" id="cdr-status-chip" style="display:none;"></div>
+            <!-- Actions -->
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button class="btn-page btn-export" id="cdr-export-all-btn"
+                onclick="CDRAnalyzer.exportAll()" style="display:none;">
+                📊 Xuất tất cả
+              </button>
+              <button class="btn-page btn-export" id="cdr-zip-btn"
+                onclick="CDRAnalyzer.downloadZip()" style="display:none;">
+                ⬇ ZIP
+              </button>
+              <button class="btn-page" id="cdr-clear-btn"
+                onclick="CDRAnalyzer.clearAll()" style="display:none;border-color:var(--accent-red);color:var(--accent-red);">
+                🗑 Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Tab Bar ────────────────────────────────────────── -->
+        <div class="cdr-tab-bar" id="cdr-tab-bar">
+          <button class="cdr-tab active" data-tab="subscriber">📱 Thuê Bao</button>
+          <button class="cdr-tab" data-tab="calls">📋 Lịch Sử GỌi</button>
+          <button class="cdr-tab" data-tab="imei">📲 IMEI</button>
+          <button class="cdr-tab" data-tab="contacts">👥 Liên Lạc</button>
+          <button class="cdr-tab" data-tab="time">⏰ Thời Gian</button>
+          <button class="cdr-tab" data-tab="location">📍 Vị Trí</button>
+          <button class="cdr-tab" data-tab="imei_imsi">🔄 IMEI/IMSI</button>
+          <button class="cdr-tab" data-tab="map">🗺 Bản Đồ</button>
+          <button class="cdr-tab" data-tab="compare">🔍 So Sánh</button>
+        </div>
+
+        <!-- ── Tab Content ────────────────────────────────────── -->
+        <div class="cdr-content" id="cdr-content">
+
+          <!-- Empty state -->
+          <div class="cdr-empty" id="cdr-empty">
+            <div style="font-size:3rem;margin-bottom:16px;">📂</div>
+            <div style="font-size:1.1rem;font-family:var(--font-mono);color:var(--text-secondary);margin-bottom:8px;">
+              CHƯA CÓ DỮ LIỆU CDR
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);max-width:400px;text-align:center;line-height:1.6;">
+              Kéo thả file Excel CDR vào dropzone phía trên hoặc click chọn file.
+              Hỗ trợ Viettel, Vinaphone, Mobiphone — tự động nhận diện.
+            </div>
+          </div>
+
+          <!-- TAB: Subscriber Info -->
+          <div class="cdr-tab-panel" id="tab-subscriber" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>📱 Thông Tin Thuê Bao</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-page" id="sub-edit-btn" onclick="CDRAnalyzer.subscriberEdit()">✏ Chỉnh sửa</button>
+                <button class="btn-page" id="sub-save-btn" onclick="CDRAnalyzer.subscriberSave()" style="display:none;color:var(--accent-cyan);border-color:var(--accent-cyan);">💾 Lưu</button>
+                <button class="btn-page" id="sub-cancel-btn" onclick="CDRAnalyzer.subscriberCancel()" style="display:none;">❌ Hủy</button>
+                <button class="btn-page" onclick="CDRAnalyzer.subscriberReset()" style="color:var(--accent-yellow);border-color:var(--accent-yellow);">🔄 Reset</button>
+                <button class="btn-page" onclick="CDRAnalyzer.clearAll()" style="color:var(--accent-red);border-color:var(--accent-red);">🗑 Xóa tất cả</button>
+              </div>
+            </div>
+            <div id="sub-fields" class="sub-fields-grid"></div>
+            <!-- Vinaphone subscriber selector -->
+            <div id="sub-vina-selector" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);">
+              <span class="form-label">👤 Chọn thuê bao (Vinaphone multi-subscriber)</span>
+              <select class="form-input" id="sub-vina-select" style="max-width:300px;margin-top:6px;background:#0c0e12;"
+                onchange="CDRAnalyzer.selectSubscriber(this.value)">
+              </select>
+            </div>
+          </div>
+
+          <!-- TAB: Call History -->
+          <div class="cdr-tab-panel" id="tab-calls" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>📋 Lịch Sử Cuộc Gọi</span>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select class="form-input" id="calls-pagesize" onchange="CDRAnalyzer.callsSetPage(1)"
+                  style="width:80px;background:#0c0e12;font-size:0.78rem;">
+                  <option value="25">25</option><option value="50" selected>50</option>
+                  <option value="75">75</option><option value="100">100</option>
+                </select>
+                <button class="btn-page btn-export" onclick="CDRAnalyzer.exportTab('calls')">💾 Excel</button>
+              </div>
+            </div>
+            <!-- Filters -->
+            <div class="cdr-filters" id="calls-filters">
+              <input type="text" class="form-input filter-input" id="calls-search" placeholder="🔍 Tìm kiếm..." oninput="CDRAnalyzer.callsFilter()">
+              <select class="form-input" id="calls-type" onchange="CDRAnalyzer.callsFilter()" style="background:#0c0e12;">
+                <option value="all">Tất cả loại</option>
+                <option value="voice_out">Gọi đi</option><option value="voice_in">Gọi đến</option>
+                <option value="sms_out">SMS đi</option><option value="sms_in">SMS đến</option>
+              </select>
+              <input type="date" class="form-input" id="calls-date-from" onchange="CDRAnalyzer.callsFilter()" style="width:140px;">
+              <input type="date" class="form-input" id="calls-date-to"   onchange="CDRAnalyzer.callsFilter()" style="width:140px;">
+              <input type="number" class="form-input" id="calls-hour-from" placeholder="Từ giờ" min="0" max="23" onchange="CDRAnalyzer.callsFilter()" style="width:90px;">
+              <input type="number" class="form-input" id="calls-hour-to"   placeholder="Đến giờ" min="0" max="23" onchange="CDRAnalyzer.callsFilter()" style="width:90px;">
+            </div>
+            <div class="cdr-stats-row" id="calls-stats"></div>
+            <div class="table-wrapper" id="calls-table-wrap" style="flex:1;overflow-y:auto;">
+              <table class="tactical-table">
+                <thead><tr id="calls-thead"></tr></thead>
+                <tbody id="calls-tbody"></tbody>
+              </table>
+            </div>
+            <div class="pagination-bar" id="calls-pagination" style="display:none;"></div>
+          </div>
+
+          <!-- TAB: IMEI Analysis -->
+          <div class="cdr-tab-panel" id="tab-imei" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>📲 Phân Tích IMEI</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-page" onclick="CDRAnalyzer.imeiLookupAll()" id="imei-lookup-btn">🔍 Tra cứu tất cả</button>
+                <button class="btn-page btn-export" onclick="CDRAnalyzer.exportTab('imei')">💾 Excel</button>
+                <button class="btn-page" onclick="CDRAnalyzer.imeiClear()" style="color:var(--accent-red);border-color:var(--accent-red);">🗑 Xóa</button>
+              </div>
+            </div>
+            <div class="cdr-stats-row" id="imei-stats"></div>
+            <div class="cdr-filters">
+              <input type="text" class="form-input filter-input" id="imei-search" placeholder="🔍 Tìm IMEI hoặc Model..." oninput="CDRAnalyzer.imeiFilter()">
+              <select class="form-input" id="imei-valid-filter" onchange="CDRAnalyzer.imeiFilter()" style="background:#0c0e12;">
+                <option value="all">Tất cả</option><option value="valid">Hợp lệ</option><option value="invalid">Không hợp lệ</option>
+              </select>
+            </div>
+            <div class="cdr-imei-cookie-box" id="imei-cookie-box" style="display:none;margin-bottom:10px;">
+              <input type="text" class="form-input" id="imei-cookie-input" placeholder="Paste cookies từ imei.info..." style="flex:1;">
+              <button class="btn-page" onclick="CDRAnalyzer.imeiSaveCookie()">💾 Lưu Cookie</button>
+              <button class="btn-page" onclick="CDRAnalyzer.imeiTestOne()">🧪 Test 1 IMEI</button>
+            </div>
+            <div class="table-wrapper" style="flex:1;overflow-y:auto;">
+              <table class="tactical-table">
+                <thead><tr><th>IMEI</th><th>Tần suất</th><th>Hợp lệ</th><th>Model (sau lookup)</th><th>Ghi chú</th></tr></thead>
+                <tbody id="imei-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB: Contacts -->
+          <div class="cdr-tab-panel" id="tab-contacts" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>👥 Số Liên Lạc</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-page btn-export" onclick="CDRAnalyzer.exportTab('contacts')">💾 Excel</button>
+              </div>
+            </div>
+            <div class="cdr-stats-row" id="contacts-stats"></div>
+            <div class="cdr-filters">
+              <input type="text" class="form-input filter-input" id="contacts-search" placeholder="🔍 Tìm số điện thoại..." oninput="CDRAnalyzer.contactsFilter()">
+              <input type="date" class="form-input" id="contacts-date-from" onchange="CDRAnalyzer.contactsFilter()" style="width:140px;">
+              <input type="date" class="form-input" id="contacts-date-to"   onchange="CDRAnalyzer.contactsFilter()" style="width:140px;">
+            </div>
+            <div class="table-wrapper" style="flex:1;overflow-y:auto;">
+              <table class="tactical-table">
+                <thead><tr><th>Số điện thoại</th><th>Tần suất</th><th>Gọi đi</th><th>Gọi đến</th><th>SMS</th><th>Zalo</th><th>Facebook</th><th>Telegram</th><th>Ghi chú</th></tr></thead>
+                <tbody id="contacts-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB: Time Analysis -->
+          <div class="cdr-tab-panel" id="tab-time" style="display:none;">
+            <div class="cdr-panel-header"><span>⏰ Phân Tích Thời Gian</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;height:calc(100% - 60px);">
+              <div class="cdr-chart-box">
+                <div class="chart-mini-label">Hoạt động theo khung giờ (24h)</div>
+                <div style="flex:1;position:relative;"><canvas id="cdr-chart-hourly"></canvas></div>
+              </div>
+              <div class="cdr-chart-box">
+                <div class="chart-mini-label">Hoạt động theo thứ trong tuần</div>
+                <div style="flex:1;position:relative;"><canvas id="cdr-chart-weekday"></canvas></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Location -->
+          <div class="cdr-tab-panel" id="tab-location" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>📍 Vị Trí (Cell/LAC)</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-page btn-export" onclick="CDRAnalyzer.exportTab('location')">💾 Excel</button>
+              </div>
+            </div>
+            <div class="cdr-stats-row" id="location-stats"></div>
+            <div class="cdr-filters">
+              <input type="text" class="form-input filter-input" id="loc-search" placeholder="🔍 Tìm LAC, CID, tỉnh, BTS..." oninput="CDRAnalyzer.locationFilter()">
+              <input type="date" class="form-input" id="loc-date-from" onchange="CDRAnalyzer.locationFilter()" style="width:140px;">
+              <input type="date" class="form-input" id="loc-date-to"   onchange="CDRAnalyzer.locationFilter()" style="width:140px;">
+            </div>
+            <div class="table-wrapper" style="flex:1;overflow-y:auto;">
+              <table class="tactical-table">
+                <thead><tr><th>LAC</th><th>Cell ID</th><th>Tỉnh</th><th>Tên trạm BTS</th><th>Tần suất</th><th>Google Maps</th></tr></thead>
+                <tbody id="location-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB: IMEI/IMSI History -->
+          <div class="cdr-tab-panel" id="tab-imei_imsi" style="display:none;">
+            <div class="cdr-panel-header"><span>🔄 Lịch Sử Thay Đổi IMEI/IMSI</span></div>
+            <div class="table-wrapper" style="flex:1;overflow-y:auto;">
+              <table class="tactical-table">
+                <thead><tr><th>Thời gian</th><th>IMEI cũ</th><th>IMEI mới</th><th>IMSI</th><th>Ghi chú</th></tr></thead>
+                <tbody id="imei-imsi-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TAB: Map -->
+          <div class="cdr-tab-panel" id="tab-map" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>🗺 Bản Đồ Vị Trí</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-page" onclick="CDRAnalyzer.mapGenerate()">🗺 Tạo bản đồ</button>
+                <button class="btn-page btn-export" id="map-download-btn" onclick="CDRAnalyzer.mapDownload()" style="display:none;">💾 Tải HTML</button>
+                <button class="btn-page" id="map-open-btn" onclick="CDRAnalyzer.mapOpen()" style="display:none;">🔗 Mở</button>
+              </div>
+            </div>
+            <div class="cdr-filters">
+              <div class="dropzone" id="map-dropzone" style="flex:1;padding:12px 20px;">
+                <input type="file" id="map-file-input" accept=".xlsx,.xls" style="display:none;">
+                <span style="font-size:0.8rem;">📁 Import file có cột Lat/Lon (optional)</span>
+              </div>
+            </div>
+            <div id="map-preview" style="flex:1;border:1px solid var(--border-color);border-radius:4px;background:#05070a;
+              display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:0.8rem;color:var(--text-muted);">
+              Nhấn "Tạo bản đồ" để sinh bản đồ từ dữ liệu Cell-LAC hiện tại
+            </div>
+          </div>
+
+          <!-- TAB: Compare -->
+          <div class="cdr-tab-panel" id="tab-compare" style="display:none;">
+            <div class="cdr-panel-header">
+              <span>🔍 So Sánh Files CDR</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-page" onclick="CDRAnalyzer.compareRun()">▶ Chạy so sánh</button>
+                <button class="btn-page btn-export" onclick="CDRAnalyzer.exportTab('compare')" id="compare-export-btn" style="display:none;">💾 Excel</button>
+              </div>
+            </div>
+            <div class="cdr-filters">
+              <div class="dropzone" id="compare-dropzone" style="flex:1;padding:12px 20px;">
+                <input type="file" id="compare-file-input" accept=".xlsx,.xls" multiple style="display:none;">
+                <span style="font-size:0.8rem;">📁 Kéo thả nhiều file CDR để so sánh (giữ Ctrl để chọn nhiều)</span>
+              </div>
+              <select class="form-input" id="compare-type" style="background:#0c0e12;min-width:180px;">
+                <option value="contacts">📞 So sánh số liên lạc</option>
+                <option value="imei">📱 So sánh IMEI</option>
+                <option value="auto">⚙ Tự động (tất cả cột)</option>
+              </select>
+            </div>
+            <div id="compare-files-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"></div>
+            <div class="table-wrapper" style="flex:1;overflow-y:auto;">
+              <table class="tactical-table">
+                <thead><tr id="compare-thead"></tr></thead>
+                <tbody id="compare-tbody"></tbody>
+              </table>
+            </div>
+            <div id="compare-summary" style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-secondary);margin-top:8px;"></div>
+          </div>
+
+        </div><!-- /cdr-content -->
+      </div><!-- /cdr-screen -->
+
+    </section>
+  </main>
+
+  <!-- Investigation Notes Panel -->
+  <div class="notes-panel" id="notes-panel">
+    <div class="notes-header">
+      <span class="notes-header-label">GHI CHÚ ĐIỀU TRA</span>
+      <button class="notes-clear-btn" id="notes-clear-btn">XÓA</button>
+    </div>
+    <textarea class="notes-textarea" id="notes-textarea" placeholder="Nhập ghi chú điều tra...&#10;Tự động lưu vào bộ nhớ phiên."></textarea>
+    <div class="notes-footer">
+      <span>AUTO-SAVED</span>
+      <span id="notes-char-count">0 ký tự</span>
+    </div>
+  </div>
+
+  <!-- Core Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="api.js"></script>
+  <script src="cell-lac-parser.js"></script>
+  <script src="cdr-analyzer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
