@@ -23,6 +23,63 @@ const CDRAnalyzer = (() => {
   }
 
   // ══════════════════════════════════════════════════════════
+  // SESSION MANAGEMENT — batch support
+  // ══════════════════════════════════════════════════════════
+
+  function registerSession(id, session) {
+    _sessions.set(id, session);
+  }
+
+  function activateSession(id) {
+    const session = _sessions.get(id);
+    if (!session || session.status !== 'done') return;
+
+    _activeSessionId = id;
+
+    // Copy session data into _S (active view — backward compat)
+    _S.parseResult   = session.parseResult;
+    _S.records       = session.records || [];
+    _S.subscriber    = session.subscriber || null;
+    _S.subscriberKey = session.subscriberKey || null;
+    _S.imeiData      = session.imeiData      || {};
+    _S.contactsData  = session.contactsData  || {};
+    _S.locationData  = session.locationData  || {};
+    _S.compareFiles  = [];
+    _S.compareResult = [];
+    _S.mapHtml       = null;
+    _S.callsPage     = 1;
+    _S.callsFiltered = [];
+    _S.currentTab    = 'subscriber';
+    // Reset chart instances so they get recreated on next render
+    Object.values(_S.charts || {}).forEach(c => { try { c.destroy(); } catch (_) {} });
+    _S.charts        = {};
+
+    // Switch UI to CDR screen — use global nav if available (handles display:flex correctly)
+    if (typeof window._sentinelNav === 'function') {
+      window._sentinelNav('cdr');
+    } else {
+      document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+      const cdrScreen = document.getElementById('cdr-screen');
+      if (cdrScreen) { cdrScreen.classList.add('active'); cdrScreen.style.display = 'flex'; }
+      document.querySelectorAll('.nav-item, .nav-parent-item').forEach(n => n.classList.remove('active'));
+      document.querySelector('.nav-item[data-screen="cdr"]')?.classList.add('active');
+      const titleEl = document.getElementById('page-display-title');
+      if (titleEl) titleEl.textContent = 'CDR ANALYZER';
+    }
+
+    _showData();
+
+    const auto = session.parseResult?.auto_detected ? ' (auto)' : '';
+    _setStatus(
+      `✓ ${session.carrierName || session.carrier}${auto} — ${_S.records.length} bản ghi | Batch`,
+      'ok'
+    );
+  }
+
+  function _getActiveSessionId() { return _activeSessionId; }
+  function _getAllSessions()     { return Array.from(_sessions.values()); }
+
+  // ══════════════════════════════════════════════════════════
   // STATE — _S is always the "active session view"
   //         Backward compatible: existing CDR tab code reads _S unchanged
   // ══════════════════════════════════════════════════════════
@@ -43,6 +100,11 @@ const CDRAnalyzer = (() => {
     mapHtml:         null,
     charts:          {},     // Chart.js instances
   };
+
+  // ── Time-tab extraction state ──────────────────────────────
+  // Khung giờ nhạy cảm: 22h–24h và 0h–7h
+  const NIGHT_HOURS = new Set([22, 23, 0, 1, 2, 3, 4, 5, 6]);
+  let _selectedHour = null;   // currently extracted hour (0-23 or null)
 
   // ══════════════════════════════════════════════════════════
   // INIT
@@ -74,11 +136,28 @@ const CDRAnalyzer = (() => {
     dz.addEventListener('click', () => fi.click());
     dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
     dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+
+    // S5.3: Multi-file routing — >1 file → Batch, single file → CDR single mode
     dz.addEventListener('drop', e => {
       e.preventDefault(); dz.classList.remove('drag-over');
-      const f = e.dataTransfer?.files?.[0];
-      if (f) _processUpload(f);
+      const files = Array.from(e.dataTransfer?.files || [])
+        .filter(f => /\.(xlsx|xls)$/i.test(f.name));
+      if (files.length === 0) return;
+      if (files.length === 1) {
+        _processUpload(files[0]);
+      } else {
+        if (typeof BatchProcessor !== 'undefined') {
+          BatchProcessor.addFiles(files);
+          // Navigate to Batch screen
+          if (typeof window._sentinelNav === 'function') window._sentinelNav('batch');
+          else document.querySelector('[data-screen="batch"]')?.click();
+          _setStatus(`📦 ${files.length} files → Batch CDR`, 'info');
+        } else {
+          _processUpload(files[0]);
+        }
+      }
     });
+
     fi.addEventListener('change', () => {
       const f = fi.files?.[0];
       if (f) _processUpload(f);
@@ -101,6 +180,36 @@ const CDRAnalyzer = (() => {
       _buildImeiData(result.records);
       _buildContactsData(result.records);
       _buildLocationData(result.records);
+
+      // Register session for batch tracking
+      // S5.1: deep clone derived data — avoids reference sharing when next file overwrites _S.*
+      const sessionId = _genSessionId();
+      _activeSessionId = sessionId;
+      _sessions.set(sessionId, {
+        sessionId,
+        fileName:     file.name,
+        fileSize:     file.size,
+        carrier:      result.carrier,
+        carrierName:  result.carrier_name,
+        format:       result.format || result.carrier,
+        confidence:   result.detection?.confidence || 0,
+        detection:    result.detection || null,
+        parseResult:  result,
+        subscriber:   JSON.parse(JSON.stringify(_S.subscriber   || {})),
+        subscriberKey: _S.subscriberKey,
+        records:      _S.records.slice(),                           // shallow copy array is fine (records not mutated)
+        imeiData:     JSON.parse(JSON.stringify(_S.imeiData      || {})),
+        contactsData: JSON.parse(JSON.stringify(_S.contactsData  || {})),
+        locationData: JSON.parse(JSON.stringify(_S.locationData  || {})),
+        compareFiles: [],
+        compareResult: [],
+        mapHtml:      null,
+        charts:       {},
+        status:       'done',
+        error:        null,
+        createdAt:    new Date(),
+        processedAt:  new Date(),
+      });
 
       _saveToStorage();
       _showData();
@@ -274,12 +383,17 @@ const CDRAnalyzer = (() => {
   function clearAll() {
     if (!confirm('Xóa toàn bộ dữ liệu CDR khỏi bộ nhớ?')) return;
     localStorage.removeItem(LS_KEY);
-    _S = { ...{
+    // S5.2: clear sessions Map to prevent memory leak across multiple uploads
+    _sessions.clear();
+    _activeSessionId = null;
+    // Destroy chart instances before resetting _S
+    Object.values(_S.charts || {}).forEach(c => { try { c.destroy(); } catch (_) {} });
+    _S = {
       parseResult: null, records: [], subscriber: null, subscriberKey: null,
       currentTab: 'subscriber', callsPage: 1, callsFiltered: [],
       imeiData: {}, contactsData: {}, locationData: {},
       compareFiles: [], compareResult: [], mapHtml: null, charts: {},
-    }};
+    };
     _hideData();
     _setStatus('🗑 Đã xóa toàn bộ dữ liệu', 'info');
     document.getElementById('cdr-dz-text').textContent = 'Kéo thả hoặc chọn file CDR (XLSX / XLS)';
@@ -730,14 +844,11 @@ const CDRAnalyzer = (() => {
 
     const hourBuckets    = new Array(24).fill(0);
     const weekdayBuckets = new Array(7).fill(0);
-    const DANGER_H = new Set([23, 0, 1, 2, 3, 4]);
 
     _S.records.forEach(r => {
       if (!r.timestamp) return;
-      // Extract hour
       const hm = r.timestamp.match(/(\d{1,2}):(\d{2})/);
       if (hm) hourBuckets[parseInt(hm[1])]++;
-      // Extract weekday
       let d = null;
       if (r.timestamp.match(/^\d{4}-\d{2}-\d{2}/)) d = new Date(r.timestamp);
       else if (r.timestamp.match(/\d{2}\/\d{2}\/\d{4}/)) {
@@ -752,34 +863,107 @@ const CDRAnalyzer = (() => {
       if (_S.charts[k]) { try { _S.charts[k].destroy(); } catch (_) {} }
     });
 
+    // Reset extraction panel when re-rendering
+    _selectedHour = null;
+    const extractEmpty   = document.getElementById('time-extract-empty');
+    const extractContent = document.getElementById('time-extract-content');
+    if (extractEmpty)   extractEmpty.style.display   = 'flex';
+    if (extractContent) extractContent.style.display = 'none';
+
     const GRID = 'rgba(255,255,255,0.04)';
     const DAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
+    // ── Color coding ─────────────────────────────────────────
+    // 22h-23h: mild night (orange-red)
+    // 0h-6h: deep night (bright red)
+    // others: cyan
+    const _barBg  = i => NIGHT_HOURS.has(i)
+      ? (i >= 22 ? 'rgba(255,120,30,0.55)' : 'rgba(255,59,48,0.60)')
+      : 'rgba(0,240,255,0.22)';
+    const _barBdr = i => NIGHT_HOURS.has(i)
+      ? (i >= 22 ? '#ff7820' : '#ff3b30')
+      : '#00f0ff';
+
+    // ── Hourly chart ─────────────────────────────────────────
     _S.charts.cdr_hourly = new Chart(document.getElementById('cdr-chart-hourly'), {
       type: 'bar',
       data: {
         labels: Array.from({ length: 24 }, (_, i) => i),
         datasets: [{
           data: hourBuckets,
-          backgroundColor: hourBuckets.map((_, i) =>
-            DANGER_H.has(i) ? 'rgba(255,59,48,0.55)' : 'rgba(0,240,255,0.22)'
+          backgroundColor: hourBuckets.map((_, i) => _barBg(i)),
+          borderColor:     hourBuckets.map((_, i) => _barBdr(i)),
+          borderWidth: hourBuckets.map(() => 1),
+          borderRadius: 3,
+          hoverBackgroundColor: hourBuckets.map((_, i) =>
+            NIGHT_HOURS.has(i) ? 'rgba(255,59,48,0.85)' : 'rgba(0,240,255,0.45)'
           ),
-          borderColor: hourBuckets.map((_, i) =>
-            DANGER_H.has(i) ? '#ff3b30' : '#00f0ff'
+          hoverBorderColor: hourBuckets.map((_, i) =>
+            NIGHT_HOURS.has(i) ? '#ff3b30' : '#ffffff'
           ),
-          borderWidth: 1, borderRadius: 2,
+          hoverBorderWidth: 2,
         }],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: ctx => {
+                const h = ctx[0].label;
+                const label = `${String(h).padStart(2,'0')}:00 – ${String((+h+1)%24).padStart(2,'0')}:00`;
+                return NIGHT_HOURS.has(+h) ? `⚠ ${label}  [KHUNG GIỜ NHẠY CẢM]` : label;
+              },
+              label: ctx => {
+                const count = ctx.parsed.y;
+                return `  ${count} cuộc gọi / liên lạc`;
+              },
+              afterLabel: () => '  ▸ Nhấp để xem chi tiết',
+            },
+            backgroundColor: 'rgba(8,12,20,0.95)',
+            borderColor: 'rgba(0,240,255,0.3)',
+            borderWidth: 1,
+            titleColor: '#00f0ff',
+            bodyColor: '#94a3b8',
+            footerColor: 'rgba(0,240,255,0.5)',
+            padding: 10,
+            cornerRadius: 4,
+          },
+        },
         scales: {
-          x: { grid: { display: false }, ticks: { callback: v => `${v}h` } },
-          y: { grid: { color: GRID }, ticks: { stepSize: 1 }, beginAtZero: true },
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: ctx => NIGHT_HOURS.has(+ctx.tick.label)
+                ? 'rgba(255,100,50,0.85)'
+                : 'rgba(148,163,184,0.7)',
+              font: { family: 'Roboto Mono', size: 10 },
+              callback: v => `${v}h`,
+            },
+          },
+          y: {
+            grid: { color: GRID },
+            ticks: { stepSize: 1, color: 'rgba(148,163,184,0.6)', font: { size: 10 } },
+            beginAtZero: true,
+          },
+        },
+        onClick: (event, elements) => {
+          if (elements.length > 0) {
+            _showHourExtraction(elements[0].index);
+          }
+        },
+        onHover: (event, elements) => {
+          if (event.native?.target) {
+            event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+          }
         },
       },
     });
 
+    // ── Weekday chart ─────────────────────────────────────────
     _S.charts.cdr_weekday = new Chart(document.getElementById('cdr-chart-weekday'), {
       type: 'bar',
       data: {
@@ -788,18 +972,155 @@ const CDRAnalyzer = (() => {
           data: weekdayBuckets,
           backgroundColor: 'rgba(0,240,255,0.22)',
           borderColor: '#00f0ff',
-          borderWidth: 1, borderRadius: 3,
+          borderWidth: 1,
+          borderRadius: 3,
+          hoverBackgroundColor: 'rgba(0,240,255,0.45)',
+          hoverBorderColor: '#ffffff',
+          hoverBorderWidth: 2,
         }],
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(8,12,20,0.95)',
+            borderColor: 'rgba(0,240,255,0.3)',
+            borderWidth: 1,
+            titleColor: '#00f0ff',
+            bodyColor: '#94a3b8',
+            padding: 10,
+            cornerRadius: 4,
+          },
+        },
         scales: {
-          x: { grid: { display: false } },
-          y: { grid: { color: GRID }, beginAtZero: true },
+          x: {
+            grid: { display: false },
+            ticks: { color: 'rgba(148,163,184,0.7)', font: { size: 11 } },
+          },
+          y: {
+            grid: { color: GRID },
+            beginAtZero: true,
+            ticks: { color: 'rgba(148,163,184,0.6)', font: { size: 10 } },
+          },
         },
       },
     });
+  }
+
+  // ── Hour extraction functions ─────────────────────────────
+
+  function _showHourExtraction(hour) {
+    _selectedHour = hour;
+    const isNight   = NIGHT_HOURS.has(hour);
+    const nextHour  = (hour + 1) % 24;
+    const pad       = n => String(n).padStart(2, '0');
+
+    // Filter records for this exact hour
+    const records = _S.records.filter(r => {
+      if (!r.timestamp) return false;
+      const hm = r.timestamp.match(/(\d{1,2}):\d{2}/);
+      return hm && parseInt(hm[1]) === hour;
+    });
+
+    // Update chart bar: highlight selected column
+    const chart = _S.charts.cdr_hourly;
+    if (chart) {
+      const n = chart.data.labels.length;
+      chart.data.datasets[0].borderColor = Array.from({ length: n }, (_, i) =>
+        i === hour ? '#ffffff'
+        : NIGHT_HOURS.has(i) ? (i >= 22 ? '#ff7820' : '#ff3b30')
+        : '#00f0ff'
+      );
+      chart.data.datasets[0].borderWidth = Array.from({ length: n }, (_, i) => i === hour ? 2.5 : 1);
+      chart.update('none');
+    }
+
+    // Panel title
+    const titleEl = document.getElementById('time-extract-title');
+    if (titleEl) {
+      titleEl.textContent = `${pad(hour)}:00 – ${pad(nextHour)}:00`;
+      titleEl.style.color = isNight ? 'var(--accent-red)' : 'var(--accent-cyan)';
+    }
+
+    // Count chip
+    const countEl = document.getElementById('time-extract-count');
+    if (countEl) countEl.textContent = `${records.length.toLocaleString()} bản ghi`;
+
+    // Danger badge
+    const dangerBadge = document.getElementById('time-danger-badge');
+    if (dangerBadge) dangerBadge.style.display = isNight ? '' : 'none';
+
+    // Populate table
+    const tbody = document.getElementById('time-extract-tbody');
+    if (tbody) {
+      if (records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-muted);font-family:var(--font-mono);font-size:0.75rem;">
+          Không có bản ghi nào tại khung giờ ${pad(hour)}h</td></tr>`;
+      } else {
+        tbody.innerHTML = records.map((r, i) => `
+          <tr class="${isNight ? 'time-row-night' : ''}">
+            <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.72rem;">${i + 1}</td>
+            <td style="font-family:var(--font-mono);font-size:0.75rem;">${_esc(r.source || '')}</td>
+            <td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--accent-cyan);">${_esc(r.target || '')}</td>
+            <td style="font-family:var(--font-mono);font-size:0.73rem;">${_esc(r.timestamp || '')}</td>
+            <td style="font-family:var(--font-mono);font-size:0.73rem;">${_esc(r.duration || '')}</td>
+            <td><span class="badge ${_commBadge(r.comm_type)}">${_esc(r.comm_type || '')}</span></td>
+            <td style="font-size:0.75rem;">${_esc(r.direction || '')}</td>
+            <td style="font-size:0.73rem;">${_esc(r.province || '')}</td>
+            <td style="font-family:var(--font-mono);font-size:0.72rem;">${_esc(r.lac || '')}</td>
+            <td style="font-family:var(--font-mono);font-size:0.72rem;">${_esc(r.cell_id || '')}</td>
+            <td style="font-size:0.7rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(r.bts_name || '')}">${_esc(r.bts_name || '')}</td>
+          </tr>`).join('');
+      }
+    }
+
+    // Show content
+    const extractEmpty   = document.getElementById('time-extract-empty');
+    const extractContent = document.getElementById('time-extract-content');
+    if (extractEmpty)   extractEmpty.style.display   = 'none';
+    if (extractContent) extractContent.style.display = 'flex';
+  }
+
+  function closeHourExtraction() {
+    _selectedHour = null;
+
+    // Reset chart highlight
+    const chart = _S.charts.cdr_hourly;
+    if (chart) {
+      const n = chart.data.labels.length;
+      chart.data.datasets[0].borderColor = Array.from({ length: n }, (_, i) =>
+        NIGHT_HOURS.has(i) ? (i >= 22 ? '#ff7820' : '#ff3b30') : '#00f0ff'
+      );
+      chart.data.datasets[0].borderWidth = Array.from({ length: n }, () => 1);
+      chart.update('none');
+    }
+
+    const extractEmpty   = document.getElementById('time-extract-empty');
+    const extractContent = document.getElementById('time-extract-content');
+    if (extractEmpty)   extractEmpty.style.display   = 'flex';
+    if (extractContent) extractContent.style.display = 'none';
+  }
+
+  function exportHourRecords() {
+    if (_selectedHour === null) { _showToast('Chưa chọn khung giờ', 'error'); return; }
+    const hour    = _selectedHour;
+    const records = _S.records.filter(r => {
+      if (!r.timestamp) return false;
+      const hm = r.timestamp.match(/(\d{1,2}):\d{2}/);
+      return hm && parseInt(hm[1]) === hour;
+    });
+    if (!records.length) { _showToast('Không có bản ghi tại khung giờ này', 'error'); return; }
+
+    const wb     = XLSX.utils.book_new();
+    const label  = `${String(hour).padStart(2,'0')}h-${String((hour+1)%24).padStart(2,'0')}h`;
+    const phone  = _S.subscriber?.phone || 'cdr';
+
+    _appendSheetXlsx(wb, _recordsToRows(records), `Liên lạc ${label}`);
+    XLSX.writeFile(wb, `${phone}_KhungGio_${label}.xlsx`);
+    _showToast(`Đã xuất ${records.length} bản ghi — ${label}`, 'ok');
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1283,7 +1604,8 @@ ${markers}
     imeiFilter, imeiSaveField, imeiClear, imeiShowCookieBox, imeiSaveCookie, imeiTestOne, imeiLookupAll,
     // Tab 4
     contactsFilter, contactSaveField,
-    // Tab 5 — auto-rendered
+    // Tab 5 — time analysis
+    closeHourExtraction, exportHourRecords,
     // Tab 6
     locationFilter, locationSaveField,
     // Tab 7 — auto-rendered
@@ -1293,5 +1615,7 @@ ${markers}
     compareRemoveFile, compareRun,
     // Export
     exportTab, exportAll, downloadZip,
+    // Batch / Session API
+    registerSession, activateSession,
   };
 })();

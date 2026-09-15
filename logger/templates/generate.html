@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Tạo Link{% endblock %}
+{% block page_title %}Tạo Link Theo Dõi Mới{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('admin') }}" class="back-link">
+  <i class="fa-solid fa-arrow-left"></i> Quay lại Dashboard
+</a>
+
+<div class="page-header">
+  <div class="page-header-left">
+    <h1><i class="fa-solid fa-link" style="color:var(--cyan);margin-right:8px;"></i>Tạo Link Theo Dõi</h1>
+    <p>Cấu hình link ngụy trang và gửi cho đối tượng cần theo dõi</p>
+  </div>
+</div>
+
+<!-- ── Success result ── -->
+{% if url %}
+<div class="success-box">
+  <div class="success-head">
+    <i class="fa-solid fa-circle-check"></i>
+    Link theo dõi đã được tạo thành công!
+  </div>
+  <div style="margin-bottom:10px;font-size:13px;color:var(--t2);">
+    Sao chép link bên dưới và gửi cho đối tượng. Mỗi lần đối tượng bấm vào,
+    hệ thống sẽ tự động ghi lại địa chỉ IP, thiết bị và thời gian.
+  </div>
+  <div class="success-url-row">
+    <span class="success-url-text" id="generatedUrl">{{ url }}</span>
+    <button class="btn-copy-lg" onclick="copyText('{{ url }}', this)">
+      <i class="fa-regular fa-copy"></i> Sao chép
+    </button>
+  </div>
+  <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+    <a href="{{ url_for('hits', token=token) }}" class="btn-view">
+      <i class="fa-solid fa-eye"></i> Xem log
+    </a>
+    <a href="{{ url_for('generate') }}" class="btn-outline">
+      <i class="fa-solid fa-plus"></i> Tạo link khác
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Error ── -->
+{% if error %}
+<div class="alert-err">
+  <i class="fa-solid fa-circle-exclamation"></i>
+  {{ error }}
+</div>
+{% endif %}
+
+<!-- ================================================================
+     FORM
+================================================================ -->
+<form method="POST" action="{{ url_for('generate') }}" enctype="multipart/form-data" id="genForm">
+
+  <!-- SECTION 1: Label -->
+  <div class="form-section">
+    <div class="form-section-head">
+      <i class="fa-solid fa-tag"></i> Nhãn mô tả
+    </div>
+    <div style="margin-bottom:0;">
+      <label class="lbl" for="label">Tên vụ án / Tên đối tượng</label>
+      <input class="inp" type="text" id="label" name="label"
+             placeholder="Vd: Vụ lừa đảo online – Nguyễn Văn A"
+             value="{{ request.form.get('label','') }}" autocomplete="off" maxlength="200">
+      <div class="inp-hint">Chỉ dùng nội bộ, không hiển thị cho đối tượng. Giúp bạn phân biệt các link.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: Mode -->
+  <div class="form-section">
+    <div class="form-section-head">
+      <i class="fa-solid fa-sliders"></i> Kiểu link ngụy trang
+    </div>
+
+    <div class="mode-selector">
+
+      <!-- GIF Ẩn -->
+      <div class="mode-opt">
+        <input type="radio" id="mode_gif" name="mode" value="gif"
+               {% if request.form.get('mode','gif') == 'gif' %}checked{% endif %}>
+        <label for="mode_gif">
+          <div class="mode-ico ico-gif"><i class="fa-solid fa-ghost"></i></div>
+          <div class="mode-name">GIF Ẩn</div>
+          <div class="mode-desc">Ảnh 1×1 pixel vô hình. Nhúng vào email — đối tượng không nhìn thấy gì.</div>
+        </label>
+      </div>
+
+      <!-- GIF Hiện -->
+      <div class="mode-opt">
+        <input type="radio" id="mode_custom" name="mode" value="custom_gif"
+               {% if request.form.get('mode') == 'custom_gif' %}checked{% endif %}>
+        <label for="mode_custom">
+          <div class="mode-ico ico-custom"><i class="fa-solid fa-image"></i></div>
+          <div class="mode-name">GIF Hiện</div>
+          <div class="mode-desc">Hiển thị ảnh GIF khi bấm. Zalo/Telegram sẽ preview ảnh — tăng tỷ lệ click.</div>
+        </label>
+      </div>
+
+      <!-- Bản Đồ -->
+      <div class="mode-opt">
+        <input type="radio" id="mode_map" name="mode" value="map"
+               {% if request.form.get('mode') == 'map' %}checked{% endif %}>
+        <label for="mode_map">
+          <div class="mode-ico ico-map"><i class="fa-solid fa-map-location-dot"></i></div>
+          <div class="mode-name">Bản Đồ</div>
+          <div class="mode-desc">Trả về ảnh bản đồ OpenStreetMap. Link trông như một vị trí địa lý.</div>
+        </label>
+      </div>
+
+    </div>
+
+    <!-- ── Conditional: GIF Hiện ── -->
+    <div class="cond-section" id="cond-custom_gif">
+      <div style="padding-top:4px;">
+
+        <div class="upload-zone">
+          <input type="file" name="gif_file" id="gif_file" accept=".gif,.png,.jpg,.jpeg,.webp">
+          <div class="upload-ico"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+          <div class="upload-txt">Kéo thả hoặc bấm để chọn ảnh</div>
+          <div class="upload-sub">Định dạng: GIF, PNG, JPG, WEBP &nbsp;·&nbsp; Khuyến nghị: GIF động</div>
+        </div>
+
+        <div class="or-divider">HOẶC nhập URL ảnh trực tiếp</div>
+
+        <div>
+          <label class="lbl" for="gif_url">URL Ảnh GIF</label>
+          <input class="inp" type="url" id="gif_url" name="gif_url"
+                 placeholder="https://example.com/anh.gif"
+                 value="{{ request.form.get('gif_url','') }}">
+          <div class="inp-hint">URL ảnh công khai trên internet (bắt buộc có HTTPS nếu dùng Zalo/Telegram)</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Conditional: Bản Đồ ── -->
+    <div class="cond-section" id="cond-map">
+      <div style="padding-top:4px;">
+
+        <div style="margin-bottom:12px;padding:10px 14px;background:var(--cyan-faint);border:1px solid rgba(0,212,255,.15);border-radius:var(--r);font-size:12.5px;color:var(--t2);">
+          <i class="fa-solid fa-circle-info" style="color:var(--cyan);margin-right:6px;"></i>
+          Tọa độ mặc định là Hà Nội. Nhập tọa độ bất kỳ để link trông như một vị trí cụ thể.
+        </div>
+
+        <div class="coord-row">
+          <div>
+            <label class="lbl" for="lat">Vĩ độ (Latitude)</label>
+            <input class="inp" type="text" id="lat" name="lat"
+                   placeholder="21.0285"
+                   value="{{ request.form.get('lat','21.0285') }}">
+          </div>
+          <div>
+            <label class="lbl" for="lng">Kinh độ (Longitude)</label>
+            <input class="inp" type="text" id="lng" name="lng"
+                   placeholder="105.8542"
+                   value="{{ request.form.get('lng','105.8542') }}">
+          </div>
+          <div>
+            <label class="lbl" for="zoom">Zoom</label>
+            <select class="sel" id="zoom" name="zoom">
+              {% for z in range(8, 19) %}
+                <option value="{{ z }}" {% if request.form.get('zoom','14')|int == z %}selected{% endif %}>{{ z }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <button type="button" class="btn-outline" onclick="openMapPreview()" style="font-size:12px;">
+            <i class="fa-solid fa-map"></i> Xem trước trên OpenStreetMap
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Submit -->
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <button type="submit" class="btn-primary-cyber">
+      <i class="fa-solid fa-bolt"></i> Tạo Link Theo Dõi
+    </button>
+    <a href="{{ url_for('admin') }}" class="btn-outline">
+      <i class="fa-solid fa-xmark"></i> Hủy
+    </a>
+    <span style="font-size:12px;color:var(--t4);">
+      <i class="fa-solid fa-lock" style="margin-right:4px;"></i>Link sẽ tồn tại vĩnh viễn cho đến khi bạn xóa
+    </span>
+  </div>
+
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openMapPreview() {
+  const lat  = document.getElementById('lat')?.value  || '21.0285';
+  const lng  = document.getElementById('lng')?.value  || '105.8542';
+  const zoom = document.getElementById('zoom')?.value || '14';
+  window.open(`https://www.openstreetmap.org/#map=${zoom}/${lat}/${lng}`, '_blank');
+}
+</script>
+{% endblock %}

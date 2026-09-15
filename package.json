@@ -1,0 +1,21 @@
+{
+  "name": "telecomplatform",
+  "version": "4.2.1",
+  "description": "TelecomPlatform — Sentinel Core Analytics System for CDR forensics, geospatial telemetry, and financial ledger analysis.",
+  "product": "TelecomPlatform",
+  "main": "account-export-grouping.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["telecom", "cdr", "forensics", "analytics", "sentinel"],
+  "author": "Cao_Son_Hinh su_CNC",
+  "organization": "Gravity Intelligence Lab",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

@@ -1,0 +1,14 @@
+# Dependencies / build cache — do not commit
+node_modules/
+__pycache__/
+*.pyc
+
+# Local SQLite databases — local runtime state / captured tracking data,
+# never committed (logger/logger.db holds real IP/device hits from the
+# SRAU decoy-link module; telecom.db is the local dev DB)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files with real secrets (keep .env.example templates)
+.env

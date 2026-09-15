@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ decoy_title }}</title>
+
+  <!-- Open Graph (Facebook, Zalo, Viber, iMessage...) -->
+  <meta property="og:type"        content="website">
+  <meta property="og:title"       content="{{ decoy_title }}">
+  <meta property="og:description" content="{{ decoy_title }}">
+  <meta property="og:image"       content="{{ gif_url }}">
+  <meta property="og:url"         content="{{ page_url }}">
+  <meta property="og:image:width"  content="600">
+  <meta property="og:image:height" content="400">
+
+  <!-- Twitter Card (Telegram, Twitter/X) -->
+  <meta name="twitter:card"        content="summary_large_image">
+  <meta name="twitter:title"       content="{{ decoy_title }}">
+  <meta name="twitter:description" content="{{ decoy_title }}">
+  <meta name="twitter:image"       content="{{ gif_url }}">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #0a0a0a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .viewer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .viewer img {
+      max-width: 100%;
+      max-height: 100vh;
+      object-fit: contain;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="viewer">
+    <img src="{{ gif_url }}" alt="{{ decoy_title }}" loading="eager">
+  </div>
+  <script>
+    (function () {
+      var params = new URLSearchParams({
+        w:  screen.width,
+        h:  screen.height,
+        tz: (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : ''),
+        t:  Date.now()
+      });
+      var url = '/beacon/meta/{{ token }}?' + params.toString();
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url);
+      } else {
+        new Image().src = url;
+      }
+    })();
+  </script>
+</body>
+</html>

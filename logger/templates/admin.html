@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard &mdash; Tổng quan hoạt động{% endblock %}
+
+{% block content %}
+
+{# ── Compute stats ── #}
+{% set total_hits  = tokens | sum(attribute='hit_count') %}
+{% set cnt_gif     = tokens | selectattr('mode','equalto','gif')        | list | length %}
+{% set cnt_map     = tokens | selectattr('mode','equalto','map')        | list | length %}
+{% set cnt_custom  = tokens | selectattr('mode','equalto','custom_gif') | list | length %}
+
+<!-- ── Page header ── -->
+<div class="page-header">
+  <div class="page-header-left">
+    <h1><i class="fa-solid fa-gauge-high" style="color:var(--cyan);margin-right:8px;"></i>Dashboard</h1>
+    <p>Quản lý link theo dõi và dữ liệu truy cập thu thập được</p>
+  </div>
+  <a href="{{ url_for('generate') }}" class="btn-primary-cyber">
+    <i class="fa-solid fa-plus"></i> Tạo Link Mới
+  </a>
+</div>
+
+<!-- ── Stats ── -->
+<div class="stats-grid">
+
+  <div class="stat-card c-cyan">
+    <div class="stat-label"><i class="fa-solid fa-link" style="color:var(--cyan)"></i> Tổng Link</div>
+    <div class="stat-value">{{ tokens | length }}</div>
+    <div class="stat-sub">tracking links đang hoạt động</div>
+    <i class="fa-solid fa-link stat-bg-icon"></i>
+  </div>
+
+  <div class="stat-card c-purple">
+    <div class="stat-label"><i class="fa-solid fa-crosshairs" style="color:var(--purple)"></i> Tổng Lượt</div>
+    <div class="stat-value">{{ total_hits }}</div>
+    <div class="stat-sub">lần nhấp đã ghi lại</div>
+    <i class="fa-solid fa-crosshairs stat-bg-icon"></i>
+  </div>
+
+  <div class="stat-card c-green">
+    <div class="stat-label"><i class="fa-solid fa-ghost" style="color:var(--green)"></i> GIF Ẩn</div>
+    <div class="stat-value">{{ cnt_gif }}</div>
+    <div class="stat-sub">+ {{ cnt_custom }} GIF hiện</div>
+    <i class="fa-solid fa-ghost stat-bg-icon"></i>
+  </div>
+
+  <div class="stat-card c-amber">
+    <div class="stat-label"><i class="fa-solid fa-map-location-dot" style="color:var(--amber)"></i> Bản Đồ</div>
+    <div class="stat-value">{{ cnt_map }}</div>
+    <div class="stat-sub">link ngụy trang bản đồ</div>
+    <i class="fa-solid fa-map stat-bg-icon"></i>
+  </div>
+
+</div>
+
+<!-- ── Tokens table ── -->
+<div class="data-card">
+  <div class="data-card-header">
+    <div class="data-card-title">
+      <i class="fa-solid fa-table-list"></i>
+      Danh sách Link Theo Dõi
+      <span style="font-size:11px;color:var(--t4);font-weight:400;margin-left:4px;">({{ tokens | length }} mục)</span>
+    </div>
+    <a href="{{ url_for('generate') }}" class="btn-outline" style="font-size:12px;">
+      <i class="fa-solid fa-plus"></i> Tạo mới
+    </a>
+  </div>
+
+  <div class="table-wrap">
+    {% if tokens %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Nhãn / Mô tả</th>
+          <th>Kiểu</th>
+          <th>Tạo lúc</th>
+          <th>Lượt nhấp</th>
+          <th>Link theo dõi</th>
+          <th style="text-align:right;">Hành động</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tokens %}
+        <tr>
+          <!-- # -->
+          <td class="row-number">{{ loop.index }}</td>
+
+          <!-- Label -->
+          <td>
+            <div style="font-weight:600;color:var(--t1);font-size:13.5px;">
+              {{ t.label or '<span style="color:var(--t4);font-style:italic">Không có nhãn</span>' | safe }}
+            </div>
+            <div class="token-chip" style="margin-top:4px;">{{ t.token }}</div>
+          </td>
+
+          <!-- Mode badge -->
+          <td>
+            {% if t.mode == 'gif' %}
+              <span class="mode-badge mode-gif"><i class="fa-solid fa-ghost"></i> GIF Ẩn</span>
+            {% elif t.mode == 'custom_gif' %}
+              <span class="mode-badge mode-custom_gif"><i class="fa-solid fa-image"></i> GIF Hiện</span>
+            {% elif t.mode == 'map' %}
+              <span class="mode-badge mode-map"><i class="fa-solid fa-map-pin"></i> Bản Đồ</span>
+            {% else %}
+              <span class="mode-badge mode-gif">{{ t.mode }}</span>
+            {% endif %}
+          </td>
+
+          <!-- Created at -->
+          <td>
+            <span class="ts-cell" data-utc="{{ t.created_at }}">{{ t.created_at }} UTC</span>
+          </td>
+
+          <!-- Hit count -->
+          <td>
+            <span class="hit-badge {% if t.hit_count == 0 %}zero{% endif %}">
+              <i class="fa-solid fa-{% if t.hit_count > 0 %}circle-dot{% else %}circle{% endif %}"
+                 style="font-size:9px;"></i>
+              {{ t.hit_count }}
+            </span>
+          </td>
+
+          <!-- Track URL -->
+          <td>
+            <div class="url-cell">
+              <span class="url-text" title="{{ t.track_url }}">{{ t.track_url }}</span>
+              <button class="btn-copy" onclick="copyText('{{ t.track_url }}', this)" title="Sao chép link">
+                <i class="fa-regular fa-copy"></i>
+              </button>
+            </div>
+          </td>
+
+          <!-- Actions -->
+          <td style="text-align:right;white-space:nowrap;">
+            <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+              <a href="{{ url_for('hits', token=t.token) }}" class="btn-view">
+                <i class="fa-solid fa-eye"></i> Log
+              </a>
+              <button class="btn-del"
+                onclick="confirmDelete('{{ t.token }}', '{{ (t.label or t.token) | replace("'","\\\'") }}')">
+                <i class="fa-solid fa-trash"></i> Xóa
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% else %}
+    <!-- Empty state -->
+    <div class="empty-state">
+      <div class="empty-icon"><i class="fa-solid fa-link-slash"></i></div>
+      <div class="empty-title">Chưa có link nào</div>
+      <div class="empty-sub">Tạo link theo dõi đầu tiên để bắt đầu thu thập dữ liệu</div>
+      <a href="{{ url_for('generate') }}" class="btn-primary-cyber">
+        <i class="fa-solid fa-plus"></i> Tạo Link Đầu Tiên
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ================================================================
+     DELETE CONFIRMATION MODAL
+================================================================ -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-box">
+    <div class="modal-title" style="color:var(--red);">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      Xác nhận xóa
+    </div>
+    <div class="modal-body">
+      Bạn sắp xóa vĩnh viễn link theo dõi:
+      <br><br>
+      <strong style="color:var(--t1);font-size:14px;" id="deleteLabel">—</strong>
+      <br><br>
+      Toàn bộ dữ liệu log (IP, thiết bị, thời gian) liên quan sẽ bị <strong style="color:var(--red);">xóa vĩnh viễn</strong>
+      và không thể khôi phục.
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeDeleteModal()">
+        <i class="fa-solid fa-xmark"></i> Hủy
+      </button>
+      <form id="deleteForm" method="POST" action="" style="display:inline;">
+        <button type="submit" class="btn-del" style="font-size:13px;padding:7px 16px;">
+          <i class="fa-solid fa-trash"></i> Xóa vĩnh viễn
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

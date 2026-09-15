@@ -4,6 +4,7 @@ Import router — CDR Excel file upload and batch management.
 Implemented:
   POST /imports/upload           single file upload → UploadResponse
   POST /imports/upload/batch     multi-file upload  → BatchUploadResponse
+  POST /imports/{upload_id}/process  trigger CDR import → ImportResult
 
 Stubs (501):
   GET    /imports/batches
@@ -14,6 +15,7 @@ Stubs (501):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Annotated, Optional
 
@@ -30,6 +32,7 @@ from backend.app.services.upload import (
     UploadResponseData,
     ValidationSummaryOut,
 )
+from backend.app.services.upload.storage import upload_storage
 from backend.app.utils.pagination import PaginationParams
 
 log = logging.getLogger("telecom.routers.imports")
@@ -177,6 +180,98 @@ async def upload_multiple_files(
 
 
 # ---------------------------------------------------------------------------
+# POST /imports/{upload_id}/process — trigger CDR import
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{upload_id}/process",
+    summary="Process an uploaded CDR file",
+    description=(
+        "Trigger the full CDR import pipeline for a previously uploaded file.\n\n"
+        "The `upload_id` is the UUID string returned by `POST /imports/upload`.\n\n"
+        "**Pipeline steps:**\n"
+        "1. Locate file in `pending/` storage\n"
+        "2. Parse Excel → auto-detect carrier (or use `template_override`)\n"
+        "3. Upsert Subscriber (create or update PII)\n"
+        "4. Create ImportBatch (status=pending)\n"
+        "5. Normalize & bulk-insert CDR records\n"
+        "6. Rebuild analytics stats (contacts, hourly, weekly, towers, devices)\n"
+        "7. Update ImportBatch (status=success)\n"
+        "8. Move file from `pending/` → `processed/`\n\n"
+        "Returns `ImportResult` on success. "
+        "On parse/DB failure the batch row is marked FAILED and the file moves to `failed/`."
+    ),
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def process_import(
+    upload_id: str = FPath(
+        ...,
+        description="UUID string returned by the upload endpoint (no extension).",
+    ),
+    template_override: Optional[str] = Query(
+        default=None,
+        description="Force carrier template: viettel | vina | mobi. Omit for auto-detect.",
+        pattern="^(viettel|vina|mobi)$",
+    ),
+    svc=Depends(get_import_service),
+) -> JSONResponse:
+    # ── Locate pending file ──────────────────────────────────────────────
+    path = None
+    for ext in (".xlsx", ".xls"):
+        candidate = upload_storage.get_pending(upload_id + ext)
+        if candidate is not None:
+            path = candidate
+            break
+
+    if path is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "success": False,
+                "error": {
+                    "detail": (
+                        f"No pending file found for upload_id='{upload_id}'. "
+                        "The file may have already been processed, failed, or does not exist."
+                    )
+                },
+            },
+        )
+
+    # ── Run import pipeline in thread pool (CPU/IO heavy) ────────────────
+    try:
+        result = await asyncio.to_thread(svc.import_file, path, template_override)
+
+        # Move to processed/ after successful DB commit
+        try:
+            upload_storage.move_to_processed(path)
+        except Exception as move_err:
+            # Non-fatal — data is already in DB; log and continue
+            log.warning("Could not move file to processed/: %s", move_err)
+
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={"success": True, "data": result.model_dump()},
+        )
+
+    except Exception as exc:
+        log.exception("Import failed for upload_id=%s: %s", upload_id, exc)
+
+        # Move to failed/ for audit
+        try:
+            upload_storage.move_to_failed(path)
+        except Exception:
+            pass
+
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={
+                "success": False,
+                "error": {"detail": str(exc)},
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Batch management — stubs (501)
 # ---------------------------------------------------------------------------
 
@@ -207,6 +302,7 @@ async def get_batch(
 @router.delete(
     "/batches/{batch_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
     summary="Delete an import batch",
     description="Deletes the batch record and all CDR rows linked to it. Rebuilds stats.",
 )

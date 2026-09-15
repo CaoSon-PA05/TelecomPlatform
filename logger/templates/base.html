@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}CYBEROPS{% endblock %} — IP Intelligence</title>
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- Bootstrap 5 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <!-- Font Awesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <!-- Google Fonts: Inter + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+  <!-- App styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+
+  <!-- Favicon: crosshairs SVG -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='none' stroke='%2300d4ff' stroke-width='8'/><line x1='50' y1='6' x2='50' y2='94' stroke='%2300d4ff' stroke-width='5'/><line x1='6' y1='50' x2='94' y2='50' stroke='%2300d4ff' stroke-width='5'/><circle cx='50' cy='50' r='8' fill='%2300d4ff'/></svg>">
+
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- ============================================================
+     SIDEBAR
+============================================================ -->
+<aside class="sidebar" id="sidebar">
+
+  <a class="sidebar-brand" href="{{ url_for('admin') }}">
+    <div class="brand-icon"><i class="fa-solid fa-crosshairs"></i></div>
+    <div>
+      <span class="brand-title">CYBEROPS</span>
+      <span class="brand-sub">IP Intelligence</span>
+    </div>
+  </a>
+
+  <div class="sidebar-section-label">Điều hướng</div>
+
+  <nav class="sidebar-nav">
+    <a href="{{ url_for('admin') }}"
+       class="nav-item {% if request.endpoint == 'admin' %}active{% endif %}">
+      <i class="fa-solid fa-gauge-high"></i>
+      <span>Dashboard</span>
+    </a>
+    <a href="{{ url_for('generate') }}"
+       class="nav-item {% if request.endpoint == 'generate' %}active{% endif %}">
+      <i class="fa-solid fa-link"></i>
+      <span>Tạo Link Theo Dõi</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="status-dot"></div>
+    <span>Hệ thống hoạt động</span>
+  </div>
+
+</aside>
+
+<!-- ============================================================
+     MAIN CONTENT
+============================================================ -->
+<div class="main-content" id="mainContent">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <button class="btn-toggle" onclick="toggleSidebar()" title="Mở/Đóng menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+
+    <div class="topbar-title">
+      {% block page_title %}Dashboard{% endblock %}
+    </div>
+
+    <div class="topbar-right">
+      <div class="clock-display" id="clock">--:--:-- ICT</div>
+      <div class="badge-secure">
+        <i class="fa-solid fa-shield-halved"></i> SECURE
+      </div>
+    </div>
+  </header>
+
+  <!-- PAGE CONTENT -->
+  <main class="content-wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+</div><!-- /main-content -->
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+
+</body>
+</html>

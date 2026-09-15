@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Log – {{ token.label or token.token }}{% endblock %}
+{% block page_title %}Log Truy Cập — {{ token.label or token.token }}{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('admin') }}" class="back-link">
+  <i class="fa-solid fa-arrow-left"></i> Quay lại Dashboard
+</a>
+
+<!-- ── Token info bar ── -->
+<div class="token-info-bar">
+
+  <div class="tib-item">
+    <div class="tib-label">Nhãn</div>
+    <div class="tib-value" style="font-size:16px;font-weight:700;">
+      {{ token.label or '<span style="color:var(--t4);font-style:italic">Không có nhãn</span>' | safe }}
+    </div>
+  </div>
+
+  <div class="tib-item">
+    <div class="tib-label">Kiểu</div>
+    <div class="tib-value" style="padding-top:2px;">
+      {% if token.mode == 'gif' %}
+        <span class="mode-badge mode-gif"><i class="fa-solid fa-ghost"></i> GIF Ẩn</span>
+      {% elif token.mode == 'custom_gif' %}
+        <span class="mode-badge mode-custom_gif"><i class="fa-solid fa-image"></i> GIF Hiện</span>
+      {% elif token.mode == 'map' %}
+        <span class="mode-badge mode-map"><i class="fa-solid fa-map-pin"></i> Bản Đồ</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="tib-item">
+    <div class="tib-label">Token ID</div>
+    <div class="tib-value">
+      <span class="token-chip">{{ token.token }}</span>
+    </div>
+  </div>
+
+  <div class="tib-item">
+    <div class="tib-label">Tạo lúc</div>
+    <div class="tib-value ts-cell" data-utc="{{ token.created_at }}">{{ token.created_at }} UTC</div>
+  </div>
+
+  <div class="tib-item">
+    <div class="tib-label">Tổng lượt</div>
+    <div class="tib-value">
+      <span class="hit-badge {% if hits|length == 0 %}zero{% endif %}">
+        <i class="fa-solid fa-crosshairs" style="font-size:10px;"></i>
+        {{ hits | length }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Spacer + actions -->
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <div class="url-cell">
+      <span class="url-text" title="{{ track_url }}">{{ track_url }}</span>
+      <button class="btn-copy" onclick="copyText('{{ track_url }}', this)" title="Sao chép link">
+        <i class="fa-regular fa-copy"></i>
+      </button>
+    </div>
+    <button class="btn-del"
+      onclick="confirmDelete('{{ token.token }}', {{ (token.label or token.token) | tojson }})">
+      <i class="fa-solid fa-trash"></i> Xóa
+    </button>
+  </div>
+
+</div>
+
+<!-- ── Hits table ── -->
+<div class="data-card">
+  <div class="data-card-header">
+    <div class="data-card-title">
+      <i class="fa-solid fa-list-check"></i>
+      Lịch sử truy cập
+      <span style="font-size:11px;color:var(--t4);font-weight:400;margin-left:4px;">({{ hits | length }} bản ghi)</span>
+    </div>
+    {% if hits %}
+    <div style="font-size:11.5px;color:var(--t4);">
+      <i class="fa-solid fa-clock" style="margin-right:4px;"></i>Thời gian hiển thị theo giờ Việt Nam (ICT/UTC+7)
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="table-wrap">
+    {% if hits %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Địa chỉ IP</th>
+          <th>Thiết bị / Trình duyệt</th>
+          <th>Nguồn truy cập</th>
+          <th>Ngôn ngữ</th>
+          <th>Thời gian</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in hits %}
+        <tr>
+          <!-- # -->
+          <td class="row-number">{{ loop.index }}</td>
+
+          <!-- IP -->
+          <td>
+            <div class="ip-mono">
+              <span>{{ h.ip or '—' }}</span>
+              {% if h.ip %}
+              <button class="btn-copy" onclick="copyText('{{ h.ip }}', this)" title="Sao chép IP" style="width:24px;height:24px;font-size:10px;">
+                <i class="fa-regular fa-copy"></i>
+              </button>
+              {% endif %}
+            </div>
+            {% if h.x_forwarded_for and h.x_forwarded_for != h.ip %}
+            <div class="xff-row">
+              <i class="fa-solid fa-code-branch" style="font-size:9px;margin-right:4px;"></i>
+              XFF: {{ h.x_forwarded_for | truncate(50, True, '…') }}
+            </div>
+            {% endif %}
+          </td>
+
+          <!-- User Agent -->
+          <td>
+            <div class="ua-cell" data-ua="{{ h.user_agent or '' }}">
+              {{ h.user_agent or '—' | truncate(50) }}
+            </div>
+          </td>
+
+          <!-- Referer -->
+          <td>
+            <span data-ref="{{ h.referer or '' }}">
+              {% if h.referer %}
+                <span class="ref-chip" title="{{ h.referer }}">
+                  <i class="fa-solid fa-globe" style="color:#8ca0bc"></i>&nbsp;{{ h.referer | truncate(28, True, '…') }}
+                </span>
+              {% else %}
+                <span style="color:var(--t4);">—</span>
+              {% endif %}
+            </span>
+          </td>
+
+          <!-- Language -->
+          <td>
+            {% if h.accept_language %}
+              <span class="lang-chip">{{ h.accept_language | truncate(18, True, '…') }}</span>
+            {% else %}
+              <span style="color:var(--t4);">—</span>
+            {% endif %}
+          </td>
+
+          <!-- Timestamp -->
+          <td>
+            <span class="ts-cell" data-utc="{{ h.timestamp }}">{{ h.timestamp }} UTC</span>
+          </td>
+
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% else %}
+    <!-- Empty state -->
+    <div class="empty-state">
+      <div class="empty-icon"><i class="fa-solid fa-radar"></i></div>
+      <div class="empty-title">Chưa có lượt truy cập</div>
+      <div class="empty-sub">Link chưa được bấm vào. Sao chép link và gửi cho đối tượng.</div>
+      <div class="url-cell" style="justify-content:center;">
+        <span class="url-text" title="{{ track_url }}">{{ track_url }}</span>
+        <button class="btn-copy" onclick="copyText('{{ track_url }}', this)" title="Sao chép link">
+          <i class="fa-regular fa-copy"></i>
+        </button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Hướng dẫn giải mã thông tin ── -->
+{% if hits %}
+<div style="margin-top:16px;padding:16px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);font-size:12.5px;color:var(--t3);line-height:1.8;">
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--t4);margin-bottom:8px;">
+    <i class="fa-solid fa-circle-question" style="margin-right:5px;"></i>Hướng dẫn đọc log
+  </div>
+  <span style="color:var(--cyan);font-weight:600;">Địa chỉ IP</span> — Tra cứu tại
+  <a href="https://iplocation.net" target="_blank" style="color:var(--cyan);">iplocation.net</a> để xác định nhà mạng, tỉnh/thành phố.
+  &nbsp;·&nbsp;
+  <span style="color:var(--t2);font-weight:600;">XFF</span> — X-Forwarded-For: chuỗi IP đầy đủ khi qua proxy/NAT.
+  &nbsp;·&nbsp;
+  <span style="color:var(--t2);font-weight:600;">Thời gian</span> đã được chuyển sang giờ Việt Nam (ICT/UTC+7).
+</div>
+{% endif %}
+
+<!-- ── Delete modal ── -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-box">
+    <div class="modal-title" style="color:var(--red);">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      Xác nhận xóa
+    </div>
+    <div class="modal-body">
+      Xóa vĩnh viễn link theo dõi:
+      <br><br>
+      <strong style="color:var(--t1);" id="deleteLabel">—</strong>
+      <br><br>
+      Toàn bộ <strong style="color:var(--red);">{{ hits | length }} bản ghi log</strong> sẽ bị xóa và không thể khôi phục.
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeDeleteModal()">
+        <i class="fa-solid fa-xmark"></i> Hủy
+      </button>
+      <form id="deleteForm" method="POST" action="" style="display:inline;">
+        <button type="submit" class="btn-del" style="font-size:13px;padding:7px 16px;">
+          <i class="fa-solid fa-trash"></i> Xóa vĩnh viễn
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

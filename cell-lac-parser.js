@@ -791,19 +791,106 @@ const CellLacParser = (() => {
   // PARSER REGISTRY — replaces switch in parseWorkbook
   // ═══════════════════════════════════════════════════════════════
 
+  // S6.2: PARSER_REGISTRY với version-keyed aliases
+  //   flat key  → backward compat (carrierKey = 'viettel')
+  //   format key → new dispatch (format = 'viettel_V2')
   const PARSER_REGISTRY = {
-    viettel:      parseViettel,
-    mobiphone:    parseMobiphone,
-    vinaphone:    parseVinaphone,
-    vietnamobile: parseVietnamobile,
-    gmobile:      parseGmobile,
+    viettel:          parseViettel,
+    viettel_V1:       parseViettel,
+    viettel_V2:       parseViettel,   // same parser for now; extend when V2 spec confirmed
+    mobiphone:        parseMobiphone,
+    mobiphone_V1:     parseMobiphone,
+    vinaphone:        parseVinaphone,
+    vinaphone_V1:     parseVinaphone,
+    vietnamobile:     parseVietnamobile,
+    vietnamobile_V1:  parseVietnamobile,
+    gmobile:          parseGmobile,
+    gmobile_V1:       parseGmobile,
   };
+
+  // ═══════════════════════════════════════════════════════════════
+  // VERSION REGISTRY — per-carrier version detection rules
+  // ═══════════════════════════════════════════════════════════════
+
+  // S6.1: VERSION_REGISTRY
+  //   Each carrier has one or more version entries.
+  //   Entries are checked in order; first true check wins.
+  //   V1 is always the fallback (no check function required).
+  const VERSION_REGISTRY = {
+    viettel: {
+      V2: {
+        description: 'With IMSI column',
+        // V2: header area contains an 'imsi' column label
+        check: (_wb, _sheet, rows) => {
+          const scan = rows.slice(0, 30).flat()
+            .map(c => normalize(String(c || '')));
+          return scan.some(t => t === 'imsi' || t.includes('imsi'));
+        },
+      },
+      V1: { description: 'Standard — fixed header row 21' },
+    },
+    mobiphone: {
+      V1: { description: 'Standard — header row 17, PII block' },
+    },
+    vinaphone: {
+      V1: { description: 'Standard — multi-subscriber, header row 0' },
+    },
+    vietnamobile: {
+      V1: { description: 'Generic (awaiting real file)' },
+    },
+    gmobile: {
+      V1: { description: 'Generic (awaiting real file)' },
+    },
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  // S6.1: detectFormat() — carrier + version detection
+  // ═══════════════════════════════════════════════════════════════
+
+  function detectFormat(workbook) {
+    const carrierResult = detectCarrier(workbook);
+    const carrier       = carrierResult.carrier;
+    const template      = TEMPLATES[carrier];
+
+    // Load first 35 rows of the best sheet for version checks
+    const sheetName = template ? selectSheet(workbook, template) : workbook.SheetNames[0];
+    const ws        = workbook.Sheets[sheetName];
+    const rows      = ws
+      ? XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false }).slice(0, 35)
+      : [];
+
+    // Walk version entries in declaration order; skip V1 (fallback)
+    const versions = VERSION_REGISTRY[carrier] || { V1: {} };
+    let   detected = 'V1';
+
+    for (const [ver, cfg] of Object.entries(versions)) {
+      if (ver === 'V1') continue;
+      if (cfg.check && cfg.check(workbook, ws, rows)) {
+        detected = ver;
+        break;
+      }
+    }
+
+    const format = `${carrier}_${detected}`;
+
+    console.log(`[CellLacParser] detectFormat → carrier="${carrier}" version="${detected}" format="${format}" confidence=${carrierResult.confidence}`);
+
+    return {
+      carrier,
+      version:      detected,
+      format,
+      confidence:   carrierResult.confidence,
+      source:       carrierResult.source,
+      matchedRules: carrierResult.matchedRules,
+    };
+  }
 
   // ═══════════════════════════════════════════════════════════════
   // MAIN PARSE DISPATCHER
   // ═══════════════════════════════════════════════════════════════
 
-  function parseWorkbook(workbook, carrierKey) {
+  // S6.2: parseWorkbook accepts optional format for version-keyed dispatch
+  function parseWorkbook(workbook, carrierKey, format) {
     const template = TEMPLATES[carrierKey];
     if (!template) throw new Error(`Carrier không hỗ trợ: ${carrierKey}`);
 
@@ -811,24 +898,24 @@ const CellLacParser = (() => {
     const sheet     = workbook.Sheets[sheetName];
     if (!sheet) throw new Error(`Không tìm thấy sheet. Workbook sheets: ${workbook.SheetNames.join(', ')}`);
 
-    console.log(`[CellLacParser] Parsing ${carrierKey.toUpperCase()} | sheet="${sheetName}"`);
+    console.log(`[CellLacParser] Parsing ${carrierKey.toUpperCase()} | format="${format || carrierKey}" | sheet="${sheetName}"`);
 
-    // ★ CRITICAL FIX: Do NOT set blankrows:false
-    //   blankrows defaults to true — blank rows are kept in array
-    //   This ensures rows[21] = Excel row 22 = Viettel header (NOT data row 4)
+    // ★ CRITICAL: blankrows defaults to true — do NOT override
+    //   Viettel fixedHeaderIdx=21 aligns with Excel row 22 only when blank rows are preserved
     const rows = XLSX.utils.sheet_to_json(sheet, {
       header:  1,
       defval:  null,
       raw:     false,
-      // blankrows NOT specified → defaults to true → preserves Excel row indices
     });
 
     console.log(`[CellLacParser] Total rows loaded: ${rows.length} (blank rows preserved)`);
 
     if (rows.length < 2) throw new Error('File quá ít dữ liệu (< 2 rows)');
 
-    const parserFn = PARSER_REGISTRY[carrierKey];
-    if (!parserFn) throw new Error(`Unknown carrier: ${carrierKey}`);
+    // Dispatch: prefer format key (e.g. 'viettel_V2'), fallback to carrier key
+    const parserFn = (format && PARSER_REGISTRY[format])
+                   || PARSER_REGISTRY[carrierKey];
+    if (!parserFn) throw new Error(`Unknown carrier/format: ${format || carrierKey}`);
     const parseResult = parserFn(rows, template);
 
     return {
@@ -891,12 +978,19 @@ const CellLacParser = (() => {
           let detection = null;
 
           if (carrierKey === 'auto' || !TEMPLATES[carrierKey]) {
-            detection = detectCarrier(workbook);         // returns enriched object
+            // S6.1: Use detectFormat() → gets carrier + version + format
+            detection = detectFormat(workbook);
             resolved  = detection.carrier;
-            console.log(`[CellLacParser] Auto-detect → "${resolved}" (confidence: ${detection.confidence}, source: ${detection.source})`);
+            console.log(
+              `[CellLacParser] Auto-detect → carrier="${resolved}" ` +
+              `version="${detection.version}" format="${detection.format}" ` +
+              `confidence=${detection.confidence} source="${detection.source}"`
+            );
           }
 
-          const result = parseWorkbook(workbook, resolved);
+          // Pass format for version-keyed dispatch in parseWorkbook
+          const detectedFormat = detection?.format || null;
+          const result = parseWorkbook(workbook, resolved, detectedFormat);
           result.auto_detected = (carrierKey === 'auto');
           result.file_name     = file.name;
           result.file_size     = file.size;
@@ -904,7 +998,8 @@ const CellLacParser = (() => {
           // Attach detection metadata (additive — does not break existing callers)
           if (detection) {
             result.detection = detection;
-            result.format    = detection.format || resolved;
+            result.format    = detection.format;
+            result.version   = detection.version;
           }
 
           console.log(
@@ -1351,16 +1446,96 @@ const CellLacParser = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // S7.2: buildDerived — shared pure function
+  //   Returns {imeiData, contactsData, locationData, subscriber}
+  //   Used by both cdr-analyzer.js and batch-processor.js
+  // ═══════════════════════════════════════════════════════════════
+
+  function buildDerived(records, pii, carrierName) {
+    const imeiData     = {};
+    const contactsData = {};
+    const locationData = {};
+
+    (records || []).forEach(r => {
+      // imeiData
+      const imei = r.imei;
+      if (imei) {
+        if (!imeiData[imei]) {
+          imeiData[imei] = { count: 0, valid: /^\d{15}$/.test(imei), model: '', note: '' };
+        }
+        imeiData[imei].count++;
+      }
+
+      // contactsData
+      const contact = r.target || r.source;
+      const sub     = r.subscriber;
+      const phone   = (contact && contact !== sub) ? contact : null;
+      if (phone && phone.length >= 5) {
+        if (!contactsData[phone]) {
+          contactsData[phone] = { count: 0, out: 0, in: 0, sms: 0,
+            zalo: '', fb: '', tg: '', note: '', firstSeen: null, lastSeen: null };
+        }
+        const c   = contactsData[phone];
+        const dir = (r.direction || '').toLowerCase();
+        const typ = (r.comm_type || '').toLowerCase();
+        c.count++;
+        if (dir.includes('đi') || dir === 'out' || dir === 'mo') c.out++;
+        if (dir.includes('đến') || dir === 'in'  || dir === 'mt') c.in++;
+        if (typ.includes('sms') || typ.includes('tin')) c.sms++;
+        if (r.timestamp) {
+          if (!c.firstSeen || r.timestamp < c.firstSeen) c.firstSeen = r.timestamp;
+          if (!c.lastSeen  || r.timestamp > c.lastSeen)  c.lastSeen  = r.timestamp;
+        }
+      }
+
+      // locationData
+      const lac    = r.lac    ? String(r.lac).trim()    : null;
+      const cellId = r.cell_id ? String(r.cell_id).trim() : null;
+      if (lac || cellId) {
+        const key = `${lac || '?'}_${cellId || '?'}`;
+        if (!locationData[key]) {
+          locationData[key] = { lac, cell: cellId,
+            province: r.province || '', bts: r.bts_name || '',
+            count: 0, note: '', lat: r.latitude || null, lng: r.longitude || null };
+        }
+        locationData[key].count++;
+        if (!locationData[key].province && r.province) locationData[key].province = r.province;
+        if (!locationData[key].bts && r.bts_name)      locationData[key].bts = r.bts_name;
+      }
+    });
+
+    const p         = pii || {};
+    const firstRec  = (records || [])[0];
+    const subscriber = {
+      phone:       p.phone_raw      || firstRec?.subscriber || '',
+      name:        p.full_name      || '',
+      dob:         p.date_of_birth  || '',
+      address:     p.address        || '',
+      id_doc:      p.id_doc_number  || '',
+      activation:  p.activation     || '',
+      carrier:     carrierName      || '',
+      note:        '',
+      report_from: p.report_from    || '',
+      report_to:   p.report_to      || '',
+    };
+
+    return { imeiData, contactsData, locationData, subscriber };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // PUBLIC API
   // ═══════════════════════════════════════════════════════════════
 
   return {
     TEMPLATES,
     PARSER_REGISTRY,
+    VERSION_REGISTRY,
     SUPPORTED_CARRIERS: Object.keys(TEMPLATES),
     PROVINCE_GEO,
     parseFile,
-    detectCarrier:   (wb) => detectCarrier(wb),   // now returns enriched object
+    detectCarrier: (wb) => detectCarrier(wb),
+    detectFormat:  (wb) => detectFormat(wb),
+    buildDerived,
     toGtpFormat,
     exportToExcel,
     downloadExcel,

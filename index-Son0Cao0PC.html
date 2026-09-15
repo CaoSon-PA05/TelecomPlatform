@@ -10,6 +10,24 @@
 </head>
 <body>
 
+  <!-- ── LAYER 1: SPLASH SCREEN (Gravity Author Branding) ── -->
+  <div id="gravity-splash" class="gravity-splash">
+    <div class="gravity-splash-inner">
+      <div class="gravity-splash-badge">SENTINEL CORE ANALYTICS</div>
+      <div class="gravity-splash-logo">
+        <div class="gravity-splash-logo-ring"></div>
+        <div class="gravity-splash-logo-core">⬡</div>
+      </div>
+      <h1 class="gravity-splash-title">TELECOM PLATFORM</h1>
+      <div class="gravity-splash-org">Gravity Intelligence Lab</div>
+      <div class="gravity-splash-divider"></div>
+      <div class="gravity-splash-credit">Designed &amp; Architected by</div>
+      <div class="gravity-splash-author">Cao_Son_Hinh su_CNC</div>
+      <div class="gravity-splash-bar"><div class="gravity-splash-bar-fill"></div></div>
+      <div class="gravity-splash-version">Version 4.2.1-SECURE &nbsp;·&nbsp; Build 20260602</div>
+    </div>
+  </div>
+
   <!-- Navigation Sidebar -->
   <aside class="sidebar">
     <div class="brand">
@@ -33,11 +51,17 @@
       <li class="nav-item" data-screen="cdr" style="margin-top:12px;border-top:1px solid var(--border-color);padding-top:12px;">
         <i>📊</i> <span>CDR Analyzer</span>
       </li>
+      <li class="nav-item" data-screen="batch" style="margin-top:4px;">
+        <i>📦</i> <span>Batch CDR</span>
+      </li>
     </ul>
 
     <div class="sidebar-footer">
       <div>BUILD: 4.2.1-SECURE</div>
       <div style="font-size: 0.65rem; color: var(--accent-cyan); margin-top: 4px;">ENCRYPTED SESSION</div>
+      <div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.05);padding-top:8px;">
+        <button id="btn-about-open" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.08em;cursor:pointer;padding:0;text-align:left;transition:color 0.2s;" onmouseover="this.style.color='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-muted)'">ⓘ GIỚI THIỆU HỆ THỐNG</button>
+      </div>
     </div>
   </aside>
 
@@ -827,6 +851,114 @@
         </div><!-- /cdr-content -->
       </div><!-- /cdr-screen -->
 
+      <!-- SCREEN 6: Batch CDR Processing -->
+      <div class="screen" id="batch-screen">
+        <div class="batch-header">
+          <h3 style="font-family:var(--font-heading);font-size:1.4rem;font-weight:600;margin:0 0 16px;">
+            BATCH CDR PROCESSING
+          </h3>
+
+          <!-- Toolbar -->
+          <div class="batch-toolbar">
+            <button class="btn-tactical" onclick="BatchUI.triggerFileInput()">📁 Thêm Files</button>
+            <button class="btn-tactical" onclick="BatchUI.triggerFolderInput()">📂 Chọn Folder</button>
+            <button class="btn-tactical btn-accent" id="batch-run-btn"
+                onclick="BatchProcessor.processQueue()">▶ Xử Lý Tất Cả</button>
+            <button class="btn-tactical" onclick="BatchProcessor.exportAll()">📦 Xuất ZIP</button>
+            <button class="btn-tactical btn-danger" onclick="BatchUI.clearAllConfirm()">🗑 Xóa Tất Cả</button>
+
+            <!-- Hidden inputs -->
+            <input type="file" id="batch-file-input"
+                accept=".xlsx,.xls" multiple style="display:none;">
+            <input type="file" id="batch-folder-input"
+                webkitdirectory mozdirectory
+                accept=".xlsx,.xls" style="display:none;">
+          </div>
+
+          <!-- Progress bar -->
+          <div id="batch-progress-wrap" style="display:none;margin-top:12px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="flex:1;background:rgba(255,255,255,0.06);border-radius:3px;height:6px;overflow:hidden;">
+                <div id="batch-progress-bar"
+                    style="height:100%;width:0%;background:var(--accent-cyan);
+                           transition:width 0.3s ease;border-radius:3px;"></div>
+              </div>
+              <span id="batch-progress-text"
+                  style="font-family:var(--font-mono);font-size:0.75rem;
+                         color:var(--text-secondary);white-space:nowrap;">0/0</span>
+            </div>
+          </div>
+
+          <!-- Stats chips -->
+          <div id="batch-stats-row" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;"></div>
+
+          <!-- Filters -->
+          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center;">
+            <input class="form-input" id="batch-search" type="text"
+                placeholder="🔍 Tìm file hoặc số điện thoại..."
+                style="min-width:220px;flex:1;"
+                oninput="BatchUI.applyFilter()">
+            <select class="form-input" id="batch-carrier-filter"
+                style="min-width:140px;background:#0c0e12;"
+                onchange="BatchUI.applyFilter()">
+              <option value="">Tất cả Carrier</option>
+              <option value="VTL">Viettel</option>
+              <option value="MBF">Mobiphone</option>
+              <option value="VNP">Vinaphone</option>
+              <option value="VNM">Vietnamobile</option>
+              <option value="GMB">Gmobile</option>
+            </select>
+            <select class="form-input" id="batch-status-filter"
+                style="min-width:130px;background:#0c0e12;"
+                onchange="BatchUI.applyFilter()">
+              <option value="">Tất cả trạng thái</option>
+              <option value="pending">Chờ</option>
+              <option value="processing">Đang xử lý</option>
+              <option value="done">Hoàn thành</option>
+              <option value="error">Lỗi</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Drop zone -->
+        <div id="batch-dropzone" class="dropzone batch-dropzone"
+            style="margin-top:14px;padding:20px;text-align:center;cursor:pointer;">
+          <span style="font-size:0.85rem;color:var(--text-secondary);">
+            📁 Kéo thả files XLSX / thư mục vào đây để thêm vào hàng đợi
+          </span>
+        </div>
+
+        <!-- Session table -->
+        <div class="table-wrapper batch-table-wrapper" style="flex:1;margin-top:14px;overflow-y:auto;">
+          <table class="tactical-table" id="batch-table">
+            <thead>
+              <tr>
+                <th style="min-width:180px;">File</th>
+                <th style="min-width:110px;">Carrier</th>
+                <th style="min-width:110px;">Format</th>
+                <th style="min-width:75px;text-align:right;">Records</th>
+                <th style="min-width:110px;">Thuê Bao</th>
+                <th style="min-width:110px;">Trạng Thái</th>
+                <th style="min-width:160px;">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody id="batch-tbody">
+              <tr id="batch-empty-row">
+                <td colspan="7" style="text-align:center;padding:40px;
+                    color:var(--text-secondary);font-style:italic;">
+                  Chưa có file nào. Thêm files XLSX để bắt đầu.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Footer count -->
+        <div id="batch-footer"
+            style="font-family:var(--font-mono);font-size:0.7rem;
+                   color:var(--text-secondary);margin-top:8px;text-align:right;"></div>
+      </div><!-- /batch-screen -->
+
     </section>
   </main>
 
@@ -843,6 +975,46 @@
     </div>
   </div>
 
+  <!-- ── LAYER 2: GLOBAL FOOTER WATERMARK (Gravity Author Branding) ── -->
+  <div class="gravity-footer">
+    <span class="gravity-footer-product">TelecomPlatform™</span>
+    <span class="gravity-footer-sep">·</span>
+    <span class="gravity-footer-org">Gravity Intelligence Lab</span>
+    <span class="gravity-footer-sep">·</span>
+    <span class="gravity-footer-credit">Designed by Cao_Son_Hinh su_CNC</span>
+  </div>
+
+  <!-- ── LAYER 3: ABOUT DIALOG (Gravity Author Branding) ── -->
+  <div id="gravity-about" class="gravity-about-overlay" style="display:none;">
+    <div class="gravity-about-card">
+      <button class="gravity-about-close" id="about-close-btn" title="Đóng">✕</button>
+      <div class="gravity-about-logo-row">
+        <div class="gravity-about-logo">⬡</div>
+      </div>
+      <h2 class="gravity-about-title">TELECOM PLATFORM</h2>
+      <div class="gravity-about-subtitle">SENTINEL CORE ANALYTICS SYSTEM</div>
+      <div class="gravity-about-meta">
+        <div>
+          <span>Version</span>
+          <span>4.2.1-SECURE</span>
+        </div>
+        <div>
+          <span>Build</span>
+          <span>20260602</span>
+        </div>
+        <div>
+          <span>Status</span>
+          <span style="color:var(--accent-green);">ACTIVE</span>
+        </div>
+      </div>
+      <div class="gravity-about-divider"></div>
+      <div class="gravity-about-org">Gravity Intelligence Lab</div>
+      <div class="gravity-about-credit-label">Designed &amp; Architected by:</div>
+      <div class="gravity-about-author">Cao_Son_Hinh su_CNC</div>
+      <div class="gravity-about-copyright">Copyright © 2026 &nbsp;·&nbsp; All Rights Reserved</div>
+    </div>
+  </div>
+
   <!-- Core Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -850,6 +1022,9 @@
   <script src="api.js"></script>
   <script src="cell-lac-parser.js"></script>
   <script src="cdr-analyzer.js"></script>
+  <script src="export-manager.js"></script>
+  <script src="batch-processor.js"></script>
+  <script src="batch-ui.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
