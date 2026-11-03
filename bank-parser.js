@@ -15,6 +15,14 @@ const BankParser = (() => {
     return String(v).trim();
   }
 
+  // Cross-realm-safe Date check — `instanceof Date` can fail when the value
+  // was constructed by a Date from a different JS realm (e.g. a sandboxed
+  // test harness, or a worker); the internal [[Class]] tag is reliable
+  // regardless of which realm's Date constructor built the object.
+  function isDateObj(v) {
+    return Object.prototype.toString.call(v) === '[object Date]';
+  }
+
   function normalizeStr(s) {
     return (s || '')
       .replace(/[ĐĐ]/g, 'D').replace(/[đ]/g, 'd')  // Đ/đ is not a base+combining, must be handled first
@@ -154,6 +162,15 @@ const BankParser = (() => {
     if (r0norm.includes('full_name') && r0norm.includes('acct_id') && r0norm.includes('credit_amt')) return 'Sacombank';
     if (r0norm.includes('ma_ft')   || r0norm.includes('ngay_giao_dich'))       return 'VPBank';
     if (r0norm.includes('sol_id')  || r0norm.includes('phat_sinh_no'))         return 'Eximbank';
+    // New (2026) Techcombank template's title row — "Liệt kê giao dịch tài
+    // khoản" — must be checked here, at row-0-only, rather than down in
+    // Phase 4's rows-0-14 scan: the new template's header is at row 2 and
+    // real data already starts at row 3, so by row 14 that phase would
+    // already be scanning ~12 data rows' worth of COUNTERPARTY bank names
+    // (confirmed real case: a counterparty "...NGOAI THUONG VIET NAM
+    // (VIETCOMBANK)" on row 9 made Phase 4's Vietcombank check fire first
+    // and misdetect the whole file). Row 0 alone is immune to that.
+    if (r0norm.includes('liet ke giao dich tai khoan')) return 'Techcombank';
 
     for (const idx of [1, 3]) {
       if (!rows[idx]) continue;
@@ -340,24 +357,67 @@ const BankParser = (() => {
   }
 
   // ─── TECHCOMBANK PARSER ──────────────────────────────────────────────────────
-  // Header: AccNo | Date | StmtId | TxnRef | Debit(neg) | Credit | CCY | Desc | TxnType | CPAcc
+  // Legacy header (pre-2026): AccNo | Date | StmtId | TxnRef | Debit(neg) |
+  //   Credit | CCY | Desc | TxnType | CPAcc  (10 columns, fixed positions).
+  //
+  // New template (real file audit 2026-11-03, "SK NGO ANH TAN 985555.xlsx"):
+  // same first 9 columns, PLUS 6 more — the single legacy "CPAcc" column is
+  // replaced by two parallel counterparty blocks that are never populated on
+  // the same row: "Tài khoản/Tên tài khoản đối ứng (TCB)" (filled only when
+  // the counterparty is itself a Techcombank account) and "Tài khoản/Khách
+  // hàng/Ngân hàng đối ứng (Ngân hàng khác)" (filled only for an inter-bank
+  // transfer — confirmed the majority case in the real sample) — plus an
+  // exact "Date Time" column, more precise than the value-date column (which
+  // can legitimately lag the real transaction time by up to a day under
+  // banking cut-off rules; confirmed in the sample: a 02/01 value-date row
+  // with Date Time "31/12/23 22:42"). The real file also reinserts the
+  // header row + a subtotal-only row at every page break — both are already
+  // skipped by the existing accNo-must-be-numeric filter below, unchanged.
+  //
+  // Column positions are discovered by header keyword (not fixed indices) so
+  // both templates parse correctly from the same function; the legacy
+  // single-CPAcc path is only used when neither new counterparty block is
+  // found, so legacy files are completely unaffected by this change.
 
   function parseTechcombank(rows) {
     let accountNumber = '';
-    let headerIdx = findRow(rows, ['so tai khoan', 'ngay gia tri'], 8);
-    if (headerIdx < 0) headerIdx = findRow(rows, ['account', 'value date', 'debit'], 8);
+    let headerIdx = findRow(rows, ['so tai khoan', 'ngay gia tri'], 10);
+    if (headerIdx < 0) headerIdx = findRow(rows, ['account', 'value date', 'debit'], 10);
     if (headerIdx < 0) return [];
+
+    const hdrCells = (rows[headerIdx] || []).map(c => normalizeStr(cellStr(c)));
+    const findCol = (...kws) => hdrCells.findIndex(h => kws.some(kw => h.includes(kw)));
+    const fAccNo   = findCol('so tai khoan', 'account');
+    const fDate    = findCol('ngay gia tri', 'value date');
+    const fTxnRef  = findCol('but toan', 'reference');
+    const fDebit   = findCol('ghi no', 'debit');
+    const fCredit  = findCol('ghi co', 'credit');
+    const fDesc    = findCol('dien giai', 'description');
+    const fCpAcctTcb = findCol('tai khoan doi ung tcb');
+    const fCpNameTcb = findCol('ten tai khoan doi ung');
+    const fCpAcctOth = findCol('tai khoan doi ung ngan hang khac');
+    const fCpNameOth = findCol('khach hang doi ung');
+    const fCpBankOth = findCol('ngan hang doi ung ngan hang khac');
+    const fDateTime  = findCol('date time');
+
+    const cAccNo  = fAccNo  >= 0 ? fAccNo  : 0;
+    const cDate   = fDate   >= 0 ? fDate   : 1;
+    const cTxnRef = fTxnRef >= 0 ? fTxnRef : 3;
+    const cDebit  = fDebit  >= 0 ? fDebit  : 4;
+    const cCredit = fCredit >= 0 ? fCredit : 5;
+    const cDesc   = fDesc   >= 0 ? fDesc   : 7;
+    const hasSplitCp = fCpAcctTcb >= 0 || fCpAcctOth >= 0;
 
     const txs = [];
     for (let i = headerIdx + 1; i < rows.length; i++) {
       const r = rows[i];
       if (!r || r.every(c => !c)) continue;
-      const accNo = cellStr(r[0]);
+      const accNo = cellStr(r[cAccNo]);
       if (!accNo || !/\d{4,}/.test(accNo)) continue;
       if (!accountNumber) accountNumber = accNo;
 
-      const debitRaw  = r[4];
-      const creditRaw = r[5];
+      const debitRaw  = r[cDebit];
+      const creditRaw = r[cCredit];
       let amount = 0, txType = 'OUT';
 
       if (creditRaw !== null && creditRaw !== undefined && creditRaw !== '') {
@@ -370,15 +430,42 @@ const BankParser = (() => {
       }
       if (amount === 0) continue;
 
-      const txnRef = cellStr(r[3]) || String(i);
-      const desc   = cellStr(r[7]);
-      const cpAcc  = cellStr(r[9]) || null;
+      const txnRef = cellStr(r[cTxnRef]) || String(i);
+      const desc   = cellStr(r[cDesc]);
+
+      let cpAcc = null, cpName = null, cpBank = null;
+      if (hasSplitCp) {
+        const tcbAcc = fCpAcctTcb >= 0 ? cellStr(r[fCpAcctTcb]) : '';
+        if (tcbAcc) {
+          cpAcc  = tcbAcc;
+          cpName = fCpNameTcb >= 0 ? (cellStr(r[fCpNameTcb]) || null) : null;
+          cpBank = 'Techcombank';
+        } else {
+          cpAcc  = fCpAcctOth >= 0 ? (cellStr(r[fCpAcctOth]) || null) : null;
+          cpName = fCpNameOth >= 0 ? (cellStr(r[fCpNameOth]) || null) : null;
+          cpBank = fCpBankOth >= 0 ? (cellStr(r[fCpBankOth]) || null) : null;
+        }
+      } else {
+        // Legacy single-column layout — unchanged from the pre-2026 parser.
+        cpAcc = cellStr(r[9]) || null;
+      }
+
+      // Prefer the exact Date Time column (new template only) over the
+      // value-date column for the same reason balance/frequency analysis
+      // cares about real clock time (see header note above).
+      let dateStr = parseDate(r[cDate]);
+      if (fDateTime >= 0) {
+        const dtRaw = cellStr(r[fDateTime]);
+        const m = dtRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+        if (m) dateStr = `${p2(m[1])}/${p2(m[2])}/${2000 + parseInt(m[3], 10)} ${m[4]}:${m[5]}:00`;
+      }
 
       txs.push(makeTx({
-        id: txnRef, date: parseDate(r[1]),
+        id: txnRef, date: dateStr,
         amount, description: desc, accountNumber,
-        counterpartyAccount: cpAcc, counterpartyName: null,
+        counterpartyAccount: cpAcc, counterpartyName: cpName,
         bankName: 'Techcombank', txType, balance: null,
+        counterpartyBankName: cpBank,
       }));
     }
     return txs;
@@ -600,8 +687,21 @@ const BankParser = (() => {
   }
 
   // ─── MB BANK PARSER ───────────────────────────────────────────────────────────
-  // Header block rows 0-13 (title + metadata); VN col headers at ~row 15, EN at ~row 16.
-  // Uses findHeaderRow + findColumnMapping so row offsets are discovered dynamically.
+  // Real-file audit (2026-10-28, 3 genuine MB Bank exports spanning 2021/2022/
+  // 2026, same account, different export tools/branches) found the header is
+  // ALWAYS exactly ONE row — MB combines the VN + EN column label into the
+  // same cell via a newline (e.g. "Ngày\nDate"), never two separate rows — and
+  // every column is self-describing (its own header text names it), so this
+  // parser scans the header row by keyword instead of trusting a fixed column
+  // count/position. This also tolerates the extra "VA" column some MB exports
+  // insert between Credit and Nội dung, which would otherwise shift every
+  // column after it by 1 and silently corrupt a hardcoded-position parser.
+  // Date cells were also observed in BOTH a real Date-typed cell (2021 export)
+  // and a pre-formatted "dd/mm/yyyy" string (2022/2026 exports) — the row
+  // filter below must accept either, or an entire file's transactions are
+  // silently dropped (confirmed: a string-only regex rejected 100% of the
+  // 2021 file's 2706 rows, which then fell through to the generic parser and
+  // lost bankName/accountNumber entirely).
 
   function parseMBBank(rows) {
     // ── Extract account number: scan all cells in rows 0-15 ──────────────────
@@ -617,30 +717,43 @@ const BankParser = (() => {
       }
     }
 
-    // ── Find VN header row: contains "Phát sinh nợ" + "Phát sinh có" ────────
-    let vnHdrIdx = findRow(rows, ['phat sinh no', 'phat sinh co', 'so but toan'], 20);
-    if (vnHdrIdx < 0) vnHdrIdx = findRow(rows, ['phat sinh no', 'phat sinh co'], 20);
-    if (vnHdrIdx < 0) {
-      // Fallback: use findHeaderRow to locate the best header row
-      vnHdrIdx = findHeaderRow(rows, 25);
-    }
-    if (vnHdrIdx < 0) return [];
+    // ── Find the (single) header row: contains "Phát sinh nợ" + "Phát sinh có" ─
+    let hdrIdx = findRow(rows, ['phat sinh no', 'phat sinh co', 'so but toan'], 30);
+    if (hdrIdx < 0) hdrIdx = findRow(rows, ['phat sinh no', 'phat sinh co'], 30);
+    if (hdrIdx < 0) hdrIdx = findHeaderRow(rows, 30);
+    if (hdrIdx < 0) return [];
 
-    // Use column mapping from the VN header row
-    const colMap = findColumnMapping(rows[vnHdrIdx]);
+    // ── Scan the header row directly by keyword (bank-specific, position-
+    // agnostic) — every real MB column header observed carries its own
+    // unambiguous VN+EN label, so this is more reliable here than the
+    // generic findColumnMapping(), whose "tk đối ứng"/"stk đối ứng" keywords
+    // don't match MB's actual plain "Tài khoản\nAccount" counterparty column.
+    const hdrCells = (rows[hdrIdx] || []).map(c => normalizeStr(cellStr(c)));
+    const findCol = (...kws) => hdrCells.findIndex(h => kws.some(kw => h.includes(kw)));
+    const found = {
+      date:    findCol('ngay'),
+      txId:    findCol('so but toan', 'transaction no'),
+      debit:   findCol('phat sinh no', 'debit'),
+      credit:  findCol('phat sinh co', 'credit'),
+      desc:    findCol('noi dung', 'details'),
+      cpName:  findCol('don vi thu huong', 'beneficiary'),
+      cpAcct:  findCol('tai khoan', 'account'),
+      cpBank:  findCol('ngan hang doi tac', 'remitter bank'),
+    };
+    // Column-position fallback — only used if the keyword scan above found
+    // nothing (defensive; not expected on a real MB export, since every
+    // column observed so far has had its own self-describing header text).
+    const cDate   = found.date   >= 0 ? found.date   : 0;
+    const cTxId   = found.txId   >= 0 ? found.txId   : 1;
+    const cDebit  = found.debit  >= 0 ? found.debit  : 2;
+    const cCredit = found.credit >= 0 ? found.credit : 3;
+    const cDesc   = found.desc   >= 0 ? found.desc   : 4;
+    const cCpName = found.cpName >= 0 ? found.cpName : 5;
+    const cCpAcct = found.cpAcct >= 0 ? found.cpAcct : 6;
+    const cCpBank = found.cpBank >= 0 ? found.cpBank : 7;
 
-    // MB Bank-specific hard column positions (confirmed from real file audit):
-    // 0=Date, 1=TxNo, 3=Debit, 4=Credit, 5=Description, 8=CpName, 11=CpAccount, 12=CpBank
-    const cDate    = colMap.date    >= 0 ? colMap.date    : 0;
-    const cTxId    = colMap.txId    >= 0 ? colMap.txId    : 1;
-    const cDebit   = colMap.debit   >= 0 ? colMap.debit   : 3;
-    const cCredit  = colMap.credit  >= 0 ? colMap.credit  : 4;
-    const cDesc    = colMap.description >= 0 ? colMap.description : 5;
-    const cCpName  = colMap.cpName  >= 0 ? colMap.cpName  : 8;
-    const cCpAcct  = colMap.cpAccount >= 0 ? colMap.cpAccount : 11;
-
-    // Skip the bilingual header row (EN version follows VN row)
-    const dataStart = vnHdrIdx + 2;
+    // Exactly one header row (see note above) — data starts on the very next row.
+    const dataStart = hdrIdx + 1;
 
     const txs = [];
     for (let i = dataStart; i < rows.length; i++) {
@@ -651,9 +764,13 @@ const BankParser = (() => {
       const rn = rowNorm(r);
       if (rn.includes('tong phat sinh') || rn.includes('closing balance') || rn.includes('so du cuoi')) break;
 
-      // Date column must contain DD/MM/YYYY
-      const dateRaw = cellStr(r[cDate]);
-      if (!dateRaw || !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(dateRaw)) continue;
+      // Date column must look like a date — either an actual Date-typed cell
+      // (cellDates:true from XLSX.read) or a "dd/mm/yyyy..." string. Real MB
+      // exports have used both (see header note above).
+      const dateCell = r[cDate];
+      if (dateCell == null || dateCell === '') continue;
+      const isDateLike = isDateObj(dateCell) || /^\d{1,2}\/\d{1,2}\/\d{4}/.test(cellStr(dateCell));
+      if (!isDateLike) continue;
 
       const debit  = r[cDebit]  != null ? parseAmount(r[cDebit])  : 0;
       const credit = r[cCredit] != null ? parseAmount(r[cCredit]) : 0;
@@ -662,14 +779,21 @@ const BankParser = (() => {
       const txType = credit > 0 ? 'IN' : 'OUT';
       const amount = credit > 0 ? credit : debit;
 
+      // Real MB exports render the counterparty-account cell with a leading
+      // "-"/space for debit-direction rows (a display-format artifact of the
+      // source export, not a real negative account number) — stripped here
+      // so the exported value reads as a plain account number.
+      const cpAcctRaw = cellStr(r[cCpAcct]).replace(/^-+\s*/, '').replace(/\s+/g, ' ').trim();
+
       txs.push(makeTx({
         id:                  cellStr(r[cTxId]) || String(i),
-        date:                parseDate(dateRaw),
+        date:                parseDate(dateCell),
         amount,
         description:         cellStr(r[cDesc]),
         accountNumber,
-        counterpartyAccount: cellStr(r[cCpAcct]) || null,
-        counterpartyName:    cellStr(r[cCpName])  || null,
+        counterpartyAccount:  cpAcctRaw || null,
+        counterpartyName:     cellStr(r[cCpName]) || null,
+        counterpartyBankName: cellStr(r[cCpBank]) || null,
         bankName:            'MB Bank',
         txType,
         balance:             null,
@@ -730,8 +854,15 @@ const BankParser = (() => {
       const stt = cellStr(r[cStt]);
       if (!stt || !/^\d+\.?\d*$/.test(stt.trim())) continue;
 
-      const dateRaw = cellStr(r[cDate]);
-      if (!dateRaw || !/\d{1,2}\/\d{1,2}\/\d{4}/.test(dateRaw)) continue;
+      // Date column may be a real Date-typed cell (cellDates:true) or a
+      // pre-formatted "dd/mm/yyyy" string — accept either (same systemic fix
+      // as parseMBBank; a string-only check silently drops every row of a
+      // file whose date cells came through as Date objects).
+      const dateCell = r[cDate];
+      if (dateCell == null || dateCell === '') continue;
+      const dateRaw = cellStr(dateCell);
+      const isDateLike = isDateObj(dateCell) || /\d{1,2}\/\d{1,2}\/\d{4}/.test(dateRaw);
+      if (!isDateLike) continue;
 
       const debit  = parseAmount(r[cDebit]);
       const credit = parseAmount(r[cCredit]);
@@ -743,10 +874,11 @@ const BankParser = (() => {
       const cpAcct = cellStr(r[cCpAcct]).replace(/\s+/g, '') || null;
       const cpName = cellStr(r[cCpName]) || null;
       const desc   = cellStr(r[cDesc]);
+      const dateFormatted = parseDate(dateCell);
 
       txs.push(makeTx({
-        id:                  `AGR_${dateRaw.replace(/\//g,'')}_${stt.trim()}`,
-        date:                parseDate(dateRaw),
+        id:                  `AGR_${dateFormatted.replace(/[\/\s:]/g, '')}_${stt.trim()}`,
+        date:                dateFormatted,
         amount,
         description:         desc + (cpBank ? ' | ' + cpBank : ''),
         accountNumber,
@@ -1254,6 +1386,38 @@ const BankParser = (() => {
         if (fallback.length > 0) {
           transactions = fallback;
           console.warn('[BankParser] Specific parser returned 0 rows; used generic fallback for', filename);
+        }
+      }
+
+      // MB Bank-only: real exports have been observed where the "Tài
+      // khoản/Account No" metadata block lives on a DIFFERENT sheet than the
+      // one carrying the transaction rows (e.g. a consolidated "Tong" sheet
+      // with no letterhead/metadata of its own, while a separate "Table 2"
+      // sheet in the same workbook holds it) — only the first sheet
+      // (`sheetName`) is ever read for transaction rows above, so that
+      // metadata would otherwise be missed entirely and every transaction
+      // would carry an empty accountNumber (silently splitting one real
+      // account into a separate "UNKNOWN" bucket at export time). Scan the
+      // workbook's other sheets, metadata-only (rows 0-20, never transaction
+      // rows), purely to recover this one field — never used to pull in any
+      // additional transaction data from those sheets.
+      if (detectedBank === 'MB Bank' && transactions.length > 0 &&
+          !transactions.some(t => t.accountNumber)) {
+        let recoveredAcc = '';
+        for (const sn of wb.SheetNames) {
+          if (sn === sheetName || recoveredAcc) continue;
+          const otherRows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null });
+          for (let i = 0; i < Math.min(20, otherRows.length) && !recoveredAcc; i++) {
+            for (let j = 0; j < (otherRows[i] || []).length; j++) {
+              const v = cellStr(otherRows[i][j]);
+              if (!v) continue;
+              const m = v.match(/Account\s*No\s*[:\s]+(\d{6,})/i) || v.match(/Tai khoan[^\d]*(\d{6,})/i);
+              if (m) { recoveredAcc = m[1].trim(); break; }
+            }
+          }
+        }
+        if (recoveredAcc) {
+          transactions = transactions.map(t => ({ ...t, accountNumber: recoveredAcc }));
         }
       }
 
